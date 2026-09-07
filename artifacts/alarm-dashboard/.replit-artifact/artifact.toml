@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Alarm Dashboard"
+description = "A sleep-friendly alarm dashboard for organizing labeled alarms with repeat schedules, enable controls, snooze settings, and a clear next-alarm overview."
+version = "1.0.0"
+id = "artifacts/alarm-dashboard"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 21672
+
+[services.development]
+run = "pnpm --filter @workspace/alarm-dashboard run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/alarm-dashboard", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/alarm-dashboard/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "21672"
+BASE_PATH = "/"
