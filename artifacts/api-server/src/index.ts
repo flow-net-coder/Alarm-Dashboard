@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import app from './app';
 import cron from 'node-cron';
+import { ensureTablesExist } from './db';
 import { runHeartbeat } from './lib/heartbeat';
 import { generateMarkdownFiles } from './lib/markdown';
 
@@ -11,12 +12,15 @@ app.listen(PORT, async () => {
   console.log(`[marcus] Marcus name: ${process.env.MANAGER_NAME ?? 'Marcus'}`);
   console.log(`[marcus] OpenRouter model: ${process.env.OPENROUTER_MODEL ?? 'openrouter/free'}`);
 
+  // Automatically ensure DB tables are created on start
+  await ensureTablesExist();
+
   // Generate initial .md files on startup
   try {
     await generateMarkdownFiles();
     console.log('[marcus] Initial .md files generated in marcus-state/');
   } catch (err) {
-    console.warn('[marcus] Could not generate initial .md files (DB may not be ready):', (err as Error).message);
+    console.warn('[marcus] Could not generate initial .md files:', (err as Error).message);
   }
 
   // Schedule hourly heartbeat
