@@ -45,7 +45,7 @@ router.post('/chat', async (req, res): Promise<void> => {
     res.json({ reply, timestamp: new Date().toISOString() });
   } catch (err) {
     console.error('[chat] Error generating response:', err);
-    res.status(500).json({ error: 'Failed to generate marcus response. Check your OPENROUTER_API_KEY.' });
+    res.status(500).json({ error: (err as Error).message || 'Failed to generate Marcus response.' });
   }
 });
 

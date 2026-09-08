@@ -32,6 +32,11 @@ export interface MarcusState {
   } | null;
 }
 
+export interface PushPublicKeyResponse {
+  enabled: boolean;
+  publicKey: string;
+}
+
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
@@ -95,6 +100,48 @@ export async function setMarcusContext(updates: Record<string, string>): Promise
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updates),
+    }),
+  );
+}
+
+export async function getPushPublicKey(): Promise<PushPublicKeyResponse> {
+  return json(await fetch(`${BASE}/push/public-key`));
+}
+
+export async function savePushSubscription(
+  deviceId: string,
+  subscription: PushSubscription,
+  timezone: string,
+): Promise<void> {
+  await json(
+    await fetch(`${BASE}/push/subscribe`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deviceId, subscription, timezone }),
+    }),
+  );
+}
+
+export async function syncPushAlarms(
+  deviceId: string,
+  alarms: unknown[],
+  timezone: string,
+): Promise<void> {
+  await json(
+    await fetch(`${BASE}/push/alarms`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deviceId, alarms, timezone }),
+    }),
+  );
+}
+
+export async function sendTestPush(deviceId: string): Promise<{ sent: number; subscriptions: number }> {
+  return json(
+    await fetch(`${BASE}/push/test`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deviceId }),
     }),
   );
 }

@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { App as CapacitorApp } from '@capacitor/app';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
@@ -7,7 +8,18 @@ import NotFound from '@/pages/not-found';
 import { AiChatBox } from '@/components/AiChatBox';
 import { WebsitesView } from '@/components/WebsitesView';
 import { playSound, unlockAudio } from '@/lib/sound';
-import { requestNotificationPermission, sendAlarmNotification } from '@/lib/notifications';
+import { cancelNativeAlarm, isNativeApp, requestNativeAlarmPermissions, scheduleNativeAlarm, syncNativeAlarms } from '@/lib/native-alarms';
+import {
+  getNotificationPermissionState,
+  getDeviceId,
+  registerServerPush,
+  requestNotificationPermission,
+  sendAlarmNotification,
+  syncAlarmsForServerPush,
+} from '@/lib/notifications';
+import { findWebsiteShortcut, parseOpenWebsiteCommand } from '@/lib/websites';
+import { openExternalUrl } from '@/lib/open-url';
+import { getHistory, sendMessage, sendTestPush, type Message } from '@/api';
 
 import {
   AlarmClock,
@@ -17,13 +29,16 @@ import {
   Check,
   ChevronDown,
   Clock3,
+  Download,
   Edit3,
   Flame,
   Globe,
   Menu,
+  MessageCircle,
   Moon,
   Plus,
   Search,
+  Send,
   Sparkles,
   SunMedium,
   Trash2,
@@ -56,6 +71,8 @@ export type Alarm = {
 
 type Filter = 'all' | 'active' | 'paused';
 type NavTab = 'alarms' | 'marcus' | 'websites';
+type ServerPushStatus = 'unknown' | 'ready' | 'unsupported' | 'server_not_configured' | 'permission_not_granted' | 'sync_error';
+type NativeAlarmStatus = 'browser' | 'unknown' | 'ready' | 'permission_not_granted' | 'sync_error';
 
 const STORAGE_KEY = 'morning-light-alarms';
 const palette = ['#E69C73', '#78B7A5', '#7E91C2', '#D6AE55', '#B48CBF', '#D67768'];
@@ -165,6 +182,16 @@ function todayKey() {
   return day === 0 ? 'su' : dayKeys[day - 1];
 }
 
+function alarmDateForToday(alarm: Alarm, now = new Date()) {
+  const [alarmHourRaw, alarmMinuteRaw] = alarm.time.split(':').map(Number);
+  let alarmHour = alarmHourRaw;
+  if (alarm.meridiem === 'AM' && alarmHour === 12) alarmHour = 0;
+  if (alarm.meridiem === 'PM' && alarmHour !== 12) alarmHour += 12;
+  const alarmDate = new Date(now);
+  alarmDate.setHours(alarmHour, alarmMinuteRaw || 0, 0, 0);
+  return alarmDate;
+}
+
 function formatToday() {
   return new Intl.DateTimeFormat('en-US', {
     weekday: 'long',
@@ -219,7 +246,7 @@ function Sidebar({ activeTab, onTabChange }: { activeTab: NavTab; onTabChange: (
             }`}
           >
             <Bot size={16} className={activeTab === 'marcus' ? 'text-[hsl(var(--sidebar-primary))]' : ''} />
-            Marcus AI
+            Marcus Chat
           </button>
 
           <button
@@ -564,6 +591,139 @@ function AlarmModal({
   );
 }
 
+function HomeChatWidget({ onOpenChat }: { onOpenChat: () => void }) {
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState('');
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getHistory(4)
+      .then((history) => {
+        if (!cancelled) {
+          setMessages(history.slice(-4));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setMessages([]);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const submit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const text = input.trim();
+    if (!text || sending) return;
+
+    const now = new Date().toISOString();
+    const optimistic: Message = {
+      id: `home-chat-${Date.now()}`,
+      role: 'user',
+      content: text,
+      sessionDate: now.split('T')[0]!,
+      createdAt: now,
+    };
+
+    setInput('');
+    setError(null);
+    setSending(true);
+    setMessages((current) => [...current.slice(-3), optimistic]);
+
+    const websiteQuery = parseOpenWebsiteCommand(text);
+    if (websiteQuery) {
+      const site = findWebsiteShortcut(websiteQuery);
+      const assistantMessage: Message = {
+        id: `home-chat-reply-${Date.now()}`,
+        role: 'assistant',
+        content: site
+          ? `Opening ${site.title}.`
+          : `I couldn't find "${websiteQuery}" in your website shortcuts.`,
+        sessionDate: now.split('T')[0]!,
+        createdAt: new Date().toISOString(),
+      };
+
+      setMessages((current) => [...current.slice(-3), assistantMessage]);
+      setSending(false);
+      if (site) {
+        void openExternalUrl(site.url);
+      }
+      return;
+    }
+
+    try {
+      const { reply } = await sendMessage(text);
+      const assistantMessage: Message = {
+        id: `home-chat-reply-${Date.now()}`,
+        role: 'assistant',
+        content: reply,
+        sessionDate: now.split('T')[0]!,
+        createdAt: new Date().toISOString(),
+      };
+      setMessages((current) => [...current.slice(-3), assistantMessage]);
+    } catch (err) {
+      setError((err as Error).message ?? 'Could not send message');
+      setMessages((current) => current.filter((message) => message.id !== optimistic.id));
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <section className="col-span-2 rounded-[15px] border border-[hsl(var(--border))] bg-[hsl(var(--card)/.7)] p-4" aria-labelledby="home-chat-title">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="mono-label text-[hsl(var(--accent))]">Marcus chat</div>
+          <h2 id="home-chat-title" className="mt-1 text-sm font-extrabold text-[hsl(var(--foreground))]">Ask from home</h2>
+        </div>
+        <button type="button" onClick={onOpenChat} className="quiet-button h-9 px-3 text-xs" data-testid="button-open-full-chat">
+          <MessageCircle size={14} /> Full chat
+        </button>
+      </div>
+
+      <div className="mt-3 flex max-h-44 flex-col gap-2 overflow-y-auto rounded-[12px] bg-white/55 p-2">
+        {messages.length > 0 ? (
+          messages.map((message) => (
+            <div
+              key={message.id}
+              className={`max-w-[92%] rounded-[12px] px-3 py-2 text-xs leading-5 ${
+                message.role === 'user'
+                  ? 'ml-auto bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]'
+                  : 'mr-auto border border-[hsl(var(--border))] bg-[hsl(var(--card))] text-[hsl(var(--foreground))]'
+              }`}
+            >
+              {message.content}
+            </div>
+          ))
+        ) : (
+          <div className="rounded-[12px] border border-dashed border-[hsl(var(--border))] px-3 py-5 text-center text-xs text-[hsl(var(--muted-foreground))]">
+            No chat yet. Send Marcus a quick note.
+          </div>
+        )}
+      </div>
+
+      <form onSubmit={submit} className="mt-3 flex items-center gap-2">
+        <input
+          value={input}
+          onChange={(event) => setInput(event.target.value)}
+          placeholder="Message Marcus"
+          className="soft-input h-10 text-sm"
+          data-testid="input-home-chat"
+          disabled={sending}
+        />
+        <button type="submit" className="primary-button h-10 w-10 shrink-0 px-0" disabled={!input.trim() || sending} aria-label="Send message">
+          <Send size={15} />
+        </button>
+      </form>
+      {error && <p className="mt-2 text-xs font-semibold text-[hsl(var(--destructive))]">{error}</p>}
+    </section>
+  );
+}
+
 function Home() {
   const [alarms, setAlarms] = useState<Alarm[]>(() => {
     try {
@@ -582,65 +742,133 @@ function Home() {
   const [menuOpen, setMenuOpen] = useState(false);
 
   // Notification & Audio permission state
-  const [notifGranted, setNotifGranted] = useState<boolean>(() => {
-    return typeof Notification !== 'undefined' && Notification.permission === 'granted';
-  });
+  const [permissionStatus, setPermissionStatus] = useState<NotificationPermission | 'unsupported'>(() => getNotificationPermissionState());
+  const notifGranted = permissionStatus === 'granted';
+  const [serverPushStatus, setServerPushStatus] = useState<ServerPushStatus>('unknown');
+  const [nativeAlarmStatus, setNativeAlarmStatus] = useState<NativeAlarmStatus>(() => (isNativeApp() ? 'unknown' : 'browser'));
+  const [pushTestMessage, setPushTestMessage] = useState<string | null>(null);
+  const shouldShowNotificationBanner = !notifGranted || ['server_not_configured', 'unsupported', 'sync_error'].includes(serverPushStatus);
+  const notificationBannerMessage =
+    permissionStatus === 'denied'
+      ? 'Notifications are blocked for this site. Browser popups still show while Buzzer is open.'
+      : permissionStatus === 'unsupported'
+      ? 'This browser does not support notifications. Buzzer popups still show while the app is open.'
+      : serverPushStatus === 'server_not_configured'
+      ? 'Browser notifications are allowed, but Railway push needs VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY to work while Buzzer is closed.'
+      : serverPushStatus === 'unsupported'
+      ? 'This browser cannot use closed-tab push notifications. Buzzer still works while it is open.'
+      : serverPushStatus === 'sync_error'
+      ? 'Buzzer could not sync alarms to the server. Closed-tab notifications may not fire until the API is reachable.'
+      : 'Enable Browser Notifications & Audio to hear dings when your reminders trigger.';
 
   // Ringing alarm overlay state
   const [ringingAlarm, setRingingAlarm] = useState<Alarm | null>(null);
-  const [triggeredMinuteKeys, setTriggeredMinuteKeys] = useState<Set<string>>(new Set());
+  const triggeredMinuteKeys = useRef<Set<string>>(new Set());
+  const lastAlarmSweep = useRef<Date | null>(null);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(alarms));
+    syncAlarmsForServerPush(alarms)
+      .then(() => setServerPushStatus((status) => (status === 'sync_error' ? 'unknown' : status)))
+      .catch(() => setServerPushStatus('sync_error'));
+    syncNativeAlarms(alarms)
+      .then(() => setNativeAlarmStatus((status) => (status === 'sync_error' ? 'ready' : status)))
+      .catch(() => setNativeAlarmStatus('sync_error'));
   }, [alarms]);
 
+  useEffect(() => {
+    const applyLaunchTarget = (url: string) => {
+      if (url.includes('tab=marcus') || url.includes('buzzer://chat')) {
+        setActiveTab('marcus');
+      }
+    };
+
+    applyLaunchTarget(window.location.href);
+    let cancelled = false;
+
+    CapacitorApp.addListener('appUrlOpen', ({ url }) => {
+      if (!cancelled) {
+        applyLaunchTarget(url);
+      }
+    }).catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Request Notification & unlock Audio
-  const handleEnablePermissions = async () => {
+  const ensureAlarmPermissions = async () => {
     unlockAudio();
     const granted = await requestNotificationPermission();
-    setNotifGranted(granted);
+    setPermissionStatus(getNotificationPermissionState());
+    if (isNativeApp()) {
+      const nativeGranted = await requestNativeAlarmPermissions().catch(() => false);
+      setNativeAlarmStatus(nativeGranted ? 'ready' : 'permission_not_granted');
+    }
+    const pushResult = await registerServerPush().catch(() => ({ enabled: false, reason: 'sync_error' as const }));
+    setServerPushStatus(pushResult.enabled ? 'ready' : pushResult.reason ?? 'sync_error');
+    return granted;
+  };
+
+  const handleEnablePermissions = async () => {
+    await ensureAlarmPermissions();
+  };
+
+  const handleTestPush = async () => {
+    setPushTestMessage(null);
+    const pushResult = await registerServerPush().catch(() => ({ enabled: false, reason: 'sync_error' as const }));
+    setServerPushStatus(pushResult.enabled ? 'ready' : pushResult.reason ?? 'sync_error');
+
+    if (!pushResult.enabled) {
+      setPushTestMessage('Server push is not ready yet.');
+      return;
+    }
+
+    const result = await sendTestPush(getDeviceId()).catch(() => null);
+    setPushTestMessage(
+      result && result.sent > 0
+        ? 'Test push sent. You should see a system notification.'
+        : 'No push was sent. Check that this device is subscribed and Railway has VAPID keys.',
+    );
   };
 
   // Real-time Alarm Check Clock Loop (runs every 1 sec)
   useEffect(() => {
-    const timer = setInterval(() => {
+    const checkAlarms = () => {
       const now = new Date();
-      const currentHours = now.getHours();
-      const currentMinutes = now.getMinutes();
       const day = todayKey();
-
-      const minuteKey = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}-${currentHours}:${currentMinutes}`;
+      const previousSweep = lastAlarmSweep.current ?? new Date(now.getTime() - 60_000);
+      lastAlarmSweep.current = now;
 
       alarms.forEach((alarm) => {
         if (!alarm.enabled || !alarm.days.includes(day)) return;
 
-        const [alarmHourRaw, alarmMinuteRaw] = alarm.time.split(':').map(Number);
-        let alarmHour = alarmHourRaw;
-        if (alarm.meridiem === 'AM' && alarmHour === 12) alarmHour = 0;
-        if (alarm.meridiem === 'PM' && alarmHour !== 12) alarmHour += 12;
+        const scheduledForToday = alarmDateForToday(alarm, now);
+        const triggerId = `${alarm.id}-${scheduledForToday.toISOString()}`;
+        const isDue =
+          scheduledForToday.getTime() <= now.getTime() &&
+          scheduledForToday.getTime() > previousSweep.getTime() &&
+          !triggeredMinuteKeys.current.has(triggerId);
 
-        if (alarmHour === currentHours && alarmMinuteRaw === currentMinutes) {
-          const triggerId = `${alarm.id}-${minuteKey}`;
-          if (!triggeredMinuteKeys.has(triggerId)) {
-            setTriggeredMinuteKeys((prev) => new Set(prev).add(triggerId));
+        if (!isDue) return;
 
-            // Play synthesized sound
-            playSound(alarm.sound, alarm.dingCount ?? 1);
-
-            // Trigger OS/Browser notification
-            sendAlarmNotification(alarm.label || 'Alarm Ding!', {
-              body: alarm.note || `Time: ${alarm.time} ${alarm.meridiem}`,
-            });
-
-            // Trigger on-screen ringing modal
-            setRingingAlarm(alarm);
-          }
-        }
+        triggeredMinuteKeys.current.add(triggerId);
+        playSound(alarm.sound, alarm.dingCount ?? 1);
+        void sendAlarmNotification(alarm.label || 'Alarm Ding!', {
+          body: alarm.note || `Time: ${alarm.time} ${alarm.meridiem}`,
+        });
+        setRingingAlarm(alarm);
       });
+    };
+
+    checkAlarms();
+    const timer = setInterval(() => {
+      checkAlarms();
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [alarms, triggeredMinuteKeys]);
+  }, [alarms]);
 
   const nextAlarm = useMemo(() => {
     const now = new Date();
@@ -665,10 +893,22 @@ function Home() {
   const averageSnooze = alarms.length ? Math.round(alarms.reduce((sum, alarm) => sum + alarm.snooze, 0) / alarms.length) : 0;
 
   const toggleAlarm = (id: string) => {
+    const alarm = alarms.find((item) => item.id === id);
+    if (alarm && !alarm.enabled) {
+      void ensureAlarmPermissions();
+      void scheduleNativeAlarm({ ...alarm, enabled: true }).catch(() => setNativeAlarmStatus('sync_error'));
+    }
+    if (alarm && alarm.enabled) {
+      void cancelNativeAlarm(alarm).catch(() => setNativeAlarmStatus('sync_error'));
+    }
     setAlarms((current) => current.map((alarm) => (alarm.id === id ? { ...alarm, enabled: !alarm.enabled } : alarm)));
   };
 
   const saveAlarm = (alarm: Alarm) => {
+    if (alarm.enabled) {
+      void ensureAlarmPermissions();
+      void scheduleNativeAlarm(alarm).catch(() => setNativeAlarmStatus('sync_error'));
+    }
     setAlarms((current) =>
       current.some((item) => item.id === alarm.id) ? current.map((item) => (item.id === alarm.id ? alarm : item)) : [...current, alarm],
     );
@@ -678,6 +918,7 @@ function Home() {
 
   const deleteAlarm = (alarm: Alarm) => {
     if (window.confirm(`Remove “${alarm.label || 'Untitled ritual'}”?`)) {
+      void cancelNativeAlarm(alarm).catch(() => setNativeAlarmStatus('sync_error'));
       setAlarms((current) => current.filter((item) => item.id !== alarm.id));
     }
   };
@@ -718,19 +959,35 @@ function Home() {
 
       <main className="main-canvas">
         {/* Permission Request Banner */}
-        {!notifGranted && (
+        {shouldShowNotificationBanner && (
           <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 px-4 py-3 text-amber-900 shadow-sm">
             <div className="flex items-center gap-2.5 text-xs font-semibold">
               <VolumeX size={18} className="text-amber-600 shrink-0" />
-              <span>Enable Browser Notifications & Audio to hear dings when your reminders trigger.</span>
+              <span>{notificationBannerMessage}</span>
             </div>
-            <button
-              type="button"
-              onClick={handleEnablePermissions}
-              className="rounded-xl bg-amber-600 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-amber-700 transition-colors shrink-0"
-            >
-              Enable Notifications & Sounds
-            </button>
+            {permissionStatus !== 'denied' && permissionStatus !== 'unsupported' && (
+              <div className="flex flex-wrap items-center gap-2">
+                {serverPushStatus !== 'server_not_configured' && (
+                  <button
+                    type="button"
+                    onClick={handleEnablePermissions}
+                    className="rounded-xl bg-amber-600 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-amber-700 transition-colors shrink-0"
+                  >
+                    Enable Notifications & Sounds
+                  </button>
+                )}
+                {serverPushStatus === 'ready' && (
+                  <button
+                    type="button"
+                    onClick={handleTestPush}
+                    className="rounded-xl border border-amber-600/30 bg-white/70 px-3.5 py-1.5 text-xs font-bold text-amber-900 hover:bg-white transition-colors shrink-0"
+                  >
+                    Test Push
+                  </button>
+                )}
+              </div>
+            )}
+            {pushTestMessage && <div className="basis-full text-xs font-semibold text-amber-800">{pushTestMessage}</div>}
           </div>
         )}
 
@@ -780,7 +1037,7 @@ function Home() {
                   activeTab === 'marcus' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'
                 }`}
               >
-                🤖 Marcus AI
+                Marcus Chat
               </button>
               <button
                 type="button"
@@ -827,7 +1084,7 @@ function Home() {
                       activeTab === 'marcus' ? 'bg-blue-50 text-blue-600' : 'hover:bg-slate-100'
                     }`}
                   >
-                    <Bot size={16} /> Marcus AI Assistant
+                    <Bot size={16} /> Marcus Chat
                   </button>
                   <button
                     type="button"
@@ -938,13 +1195,30 @@ function Home() {
                   <div>
                     <div className="mono-label text-[hsl(var(--accent))]">A tiny promise</div>
                     <p className="mt-1 text-sm font-bold">Keep the morning yours.</p>
+                    <p className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">
+                      Closed-tab push: {serverPushStatus === 'ready' ? 'ready' : serverPushStatus.replace(/_/g, ' ')}
+                    </p>
+                    <p className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">
+                      Native alarms: {nativeAlarmStatus === 'browser' ? 'web mode' : nativeAlarmStatus.replace(/_/g, ' ')}
+                    </p>
                   </div>
-                  <div className="flex -space-x-1.5" aria-hidden="true">
-                    <span className="h-7 w-7 rounded-full border-2 border-[hsl(var(--background))] bg-[hsl(var(--accent))]" />
-                    <span className="h-7 w-7 rounded-full border-2 border-[hsl(var(--background))] bg-[hsl(var(--chart-2))]" />
-                    <span className="h-7 w-7 rounded-full border-2 border-[hsl(var(--background))] bg-[hsl(var(--chart-3))]" />
+                  <div className="flex flex-col items-end gap-2">
+                    <a href="/downloads/buzzer-debug.apk" download className="quiet-button h-9 px-3 text-xs">
+                      <Download size={14} /> APK
+                    </a>
+                    {serverPushStatus === 'ready' ? (
+                      <button type="button" onClick={handleTestPush} className="quiet-button h-9 px-3 text-xs">
+                        Test Push
+                      </button>
+                    ) : (
+                      <button type="button" onClick={handleEnablePermissions} className="quiet-button h-9 px-3 text-xs">
+                        Enable Push
+                      </button>
+                    )}
+                    {pushTestMessage && <span className="max-w-[180px] text-right text-[10px] font-semibold text-[hsl(var(--muted-foreground))]">{pushTestMessage}</span>}
                   </div>
                 </div>
+                <HomeChatWidget onOpenChat={() => setActiveTab('marcus')} />
               </div>
             </section>
 

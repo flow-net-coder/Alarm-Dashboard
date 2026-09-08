@@ -19,7 +19,7 @@ export interface ExtractionResult {
 }
 
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY ?? '';
-const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL ?? 'openrouter/free';
+const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL ?? 'minimax/minimax-m3';
 const OPENROUTER_HTTP_REFERER = process.env.OPENROUTER_HTTP_REFERER ?? 'http://localhost:5173';
 const OPENROUTER_APP_TITLE = process.env.OPENROUTER_APP_TITLE ?? 'AI Marcus';
 const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
@@ -56,7 +56,16 @@ async function chatCompletion(
 
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(text || `OpenRouter request failed: ${response.status}`);
+    let message = text || `OpenRouter request failed: ${response.status}`;
+    try {
+      const parsed = JSON.parse(text) as { error?: { message?: string; code?: number | string } };
+      if (parsed.error?.message) {
+        message = parsed.error.message;
+      }
+    } catch {
+      // Keep the provider's raw text if it is not JSON.
+    }
+    throw new Error(`OpenRouter ${response.status}: ${message}`);
   }
 
   const data = await response.json() as {

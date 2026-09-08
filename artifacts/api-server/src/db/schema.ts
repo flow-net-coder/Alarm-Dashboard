@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, integer, jsonb, serial } from 'drizzle-orm/pg-core';
+import { boolean, pgTable, uuid, text, timestamp, integer, jsonb, serial } from 'drizzle-orm/pg-core';
 
 export const conversationsTable = pgTable('conversations', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -43,7 +43,44 @@ export const heartbeatLogsTable = pgTable('heartbeat_logs', {
   summary: text('summary'),
 });
 
+export const pushSubscriptionsTable = pgTable('push_subscriptions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  deviceId: text('device_id').notNull(),
+  endpoint: text('endpoint').notNull().unique(),
+  subscription: jsonb('subscription').notNull(),
+  timezone: text('timezone').notNull().default('UTC'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date()),
+});
+
+export const alarmsTable = pgTable('alarms', {
+  id: text('id').primaryKey(),
+  deviceId: text('device_id').notNull(),
+  label: text('label').notNull(),
+  time: text('time').notNull(),
+  meridiem: text('meridiem').notNull(),
+  days: jsonb('days').notNull(),
+  color: text('color').notNull(),
+  enabled: boolean('enabled').notNull().default(true),
+  snooze: integer('snooze').notNull().default(5),
+  sound: text('sound').notNull().default('Soft chimes'),
+  dingCount: integer('ding_count').notNull().default(1),
+  note: text('note'),
+  timezone: text('timezone').notNull().default('UTC'),
+  lastTriggeredKey: text('last_triggered_key'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date()),
+});
+
 export type Conversation = typeof conversationsTable.$inferSelect;
 export type ActionItem = typeof actionItemsTable.$inferSelect;
 export type MarcusContext = typeof marcusContextTable.$inferSelect;
 export type HeartbeatLog = typeof heartbeatLogsTable.$inferSelect;
+export type PushSubscriptionRow = typeof pushSubscriptionsTable.$inferSelect;
+export type ServerAlarm = typeof alarmsTable.$inferSelect;

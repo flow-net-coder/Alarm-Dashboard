@@ -1,30 +1,12 @@
 import { useState, useEffect } from 'react';
 import { ExternalLink, Plus, Trash2, Globe, Search, Smartphone, Monitor, ShieldCheck, X } from 'lucide-react';
-
-export type WebsiteShortcut = {
-  id: string;
-  title: string;
-  url: string;
-  category: 'all' | 'pc' | 'mobile' | 'tools';
-  icon?: string;
-};
-
-const STORAGE_KEY = 'morning-light-websites';
-
-const initialWebsites: WebsiteShortcut[] = [
-  { id: '1', title: 'Google', url: 'https://google.com', category: 'tools', icon: '🔍' },
-  { id: '2', title: 'YouTube', url: 'https://youtube.com', category: 'mobile', icon: '📺' },
-  { id: '3', title: 'Notion Notes', url: 'https://notion.so', category: 'pc', icon: '📝' },
-  { id: '4', title: 'Google Calendar', url: 'https://calendar.google.com', category: 'tools', icon: '📅' },
-  { id: '5', title: 'GitHub', url: 'https://github.com', category: 'pc', icon: '💻' },
-  { id: '6', title: 'Railway Console', url: 'https://railway.app', category: 'tools', icon: '🚀' },
-  { id: '7', title: 'Supabase DB', url: 'https://supabase.com', category: 'tools', icon: '⚡' },
-];
+import { initialWebsites, saveWebsiteShortcuts, WEBSITES_STORAGE_KEY, type WebsiteShortcut } from '@/lib/websites';
+import { openExternalUrl } from '@/lib/open-url';
 
 export function WebsitesView() {
   const [websites, setWebsites] = useState<WebsiteShortcut[]>(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEY);
+      const saved = localStorage.getItem(WEBSITES_STORAGE_KEY);
       return saved ? JSON.parse(saved) : initialWebsites;
     } catch {
       return initialWebsites;
@@ -42,7 +24,7 @@ export function WebsitesView() {
   });
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(websites));
+    saveWebsiteShortcuts(websites);
   }, [websites]);
 
   const filtered = websites.filter((site) => {
@@ -179,14 +161,13 @@ export function WebsitesView() {
                 )}
               </span>
 
-              <a
-                href={site.url}
-                target="_blank"
-                rel="noopener noreferrer"
+              <button
+                type="button"
+                onClick={() => void openExternalUrl(site.url)}
                 className="inline-flex items-center gap-1.5 rounded-lg bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-600 hover:bg-blue-100 transition-colors"
               >
                 Open <ExternalLink size={12} />
-              </a>
+              </button>
             </div>
           </article>
         ))}

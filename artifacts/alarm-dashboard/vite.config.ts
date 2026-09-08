@@ -14,7 +14,13 @@ export default defineConfig({
     react(),
     tailwindcss(),
     runtimeErrorOverlay(),
-    VitePWA({ registerType: "autoUpdate", manifest: { name: "Buzzer", short_name: "Buzzer", theme_color: "#ffffff", display: "standalone" } }),
+    VitePWA({
+      registerType: "autoUpdate",
+      manifest: { name: "Buzzer", short_name: "Buzzer", theme_color: "#ffffff", display: "standalone" },
+      workbox: {
+        importScripts: ["push-sw.js"],
+      },
+    }),
     ...(process.env.NODE_ENV !== 'production' &&
     process.env.REPL_ID !== undefined
       ? [

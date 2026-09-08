@@ -1,0 +1,8 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Buzzer</string>
+    <string name="title_activity_main">Buzzer</string>
+    <string name="marcus_widget_description">Open Marcus chat from your home screen.</string>
+    <string name="package_name">com.buzzer.timekeeper</string>
+    <string name="custom_url_scheme">com.buzzer.timekeeper</string>
+</resources>

@@ -7,12 +7,14 @@ import {
   triggerHeartbeat,
   type Message,
   type ActionItem,
-  type ManagerState,
+  type MarcusState,
 } from '../api';
+import { findWebsiteShortcut, parseOpenWebsiteCommand } from '@/lib/websites';
+import { openExternalUrl } from '@/lib/open-url';
 
 interface Props {
-  manager: ManagerState | null;
-  onManagerUpdate: () => void;
+  marcus: MarcusState | null;
+  onMarcusUpdate: () => void;
 }
 
 const TYPE_ICON: Record<string, string> = {
@@ -31,7 +33,7 @@ const STATUS_COLOR: Record<string, string> = {
   cancelled: 'bg-gray-100 text-gray-500',
 };
 
-export default function ChatScreen({ manager, onManagerUpdate }: Props) {
+export default function ChatScreen({ marcus, onMarcusUpdate }: Props) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [actions, setActions] = useState<ActionItem[]>([]);
   const [input, setInput] = useState('');
@@ -76,6 +78,36 @@ export default function ChatScreen({ manager, onManagerUpdate }: Props) {
 
     setInput('');
     setError(null);
+
+    const websiteQuery = parseOpenWebsiteCommand(text);
+    if (websiteQuery) {
+      const now = new Date().toISOString();
+      const tempUserMsg: Message = {
+        id: `temp-${Date.now()}`,
+        role: 'user',
+        content: text,
+        sessionDate: now.split('T')[0]!,
+        createdAt: now,
+      };
+      const site = findWebsiteShortcut(websiteQuery);
+      const assistantMsg: Message = {
+        id: `temp-ai-${Date.now()}`,
+        role: 'assistant',
+        content: site
+          ? `Opening ${site.title}.`
+          : `I couldn't find "${websiteQuery}" in your website shortcuts. Add it in Websites & Apps first, then ask me to open it.`,
+        sessionDate: now.split('T')[0]!,
+        createdAt: new Date().toISOString(),
+      };
+
+      setMessages((prev) => [...prev, tempUserMsg, assistantMsg]);
+      if (site) {
+        void openExternalUrl(site.url);
+      }
+      inputRef.current?.focus();
+      return;
+    }
+
     setLoading(true);
 
     // Optimistic user message
@@ -126,7 +158,7 @@ export default function ChatScreen({ manager, onManagerUpdate }: Props) {
       const result = await triggerHeartbeat();
       setLastHeartbeatMsg(`Heartbeat complete — ${result.conversationsProcessed} messages, ${result.actionItemsCreated} new items`);
       await loadData();
-      onManagerUpdate();
+      onMarcusUpdate();
     } catch (err) {
       setLastHeartbeatMsg('Heartbeat failed. Check server logs.');
     } finally {
@@ -143,8 +175,8 @@ export default function ChatScreen({ manager, onManagerUpdate }: Props) {
     }
   };
 
-  const managerName = manager?.name ?? 'Marcus';
-  const lastBeat = manager?.lastHeartbeat;
+  const managerName = marcus?.name ?? 'Marcus';
+  const lastBeat = marcus?.lastHeartbeat;
 
   return (
     <div className="flex h-full overflow-hidden">
@@ -380,20 +412,20 @@ export default function ChatScreen({ manager, onManagerUpdate }: Props) {
           </div>
 
           {/* Context summary */}
-          {manager?.context && Object.keys(manager.context).length > 0 && (
+          {marcus?.context && Object.keys(marcus.context).length > 0 && (
             <div className="border-t border-gray-100 p-3">
               <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wide mb-2">
                 Manager knows
               </p>
               <div className="space-y-1">
-                {Object.entries(manager.context).slice(0, 4).map(([k, v]) => (
+                {Object.entries(marcus.context).slice(0, 4).map(([k, v]) => (
                   <div key={k} className="flex gap-1.5 text-[10px]">
                     <span className="text-gray-400 shrink-0">{k.replace(/_/g, ' ')}:</span>
                     <span className="text-gray-700 truncate">{v}</span>
                   </div>
                 ))}
-                {Object.keys(manager.context).length > 4 && (
-                  <p className="text-[10px] text-gray-400">+{Object.keys(manager.context).length - 4} more</p>
+                {Object.keys(marcus.context).length > 4 && (
+                  <p className="text-[10px] text-gray-400">+{Object.keys(marcus.context).length - 4} more</p>
                 )}
               </div>
             </div>

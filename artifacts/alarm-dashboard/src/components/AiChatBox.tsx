@@ -55,7 +55,7 @@ export function AiChatBox() {
     }`;
 
   return (
-    <div className="h-screen flex flex-col bg-slate-50 text-slate-900">
+    <div className="h-full min-h-0 flex flex-col bg-slate-50 text-slate-900">
       <header className="flex flex-col gap-3 border-b border-slate-200 bg-white px-5 py-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-xs uppercase tracking-[0.24em] text-slate-500">AI Marcus</p>
