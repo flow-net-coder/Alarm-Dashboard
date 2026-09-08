@@ -1,0 +1,6 @@
+{
+  "versionCode": 3,
+  "versionName": "1.2",
+  "apkUrl": "/downloads/buzzer-debug.apk",
+  "notes": "Adds native Android update checks and installer handoff."
+}

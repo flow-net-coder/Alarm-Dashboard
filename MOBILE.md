@@ -42,6 +42,14 @@ After Railway deploys, it is available at:
 https://your-buzzer-production-url.up.railway.app/downloads/buzzer-debug.apk
 ```
 
+In-app updates:
+
+- This APK includes an Android update checker on the home screen.
+- Sideloaded Android apps cannot install silently; Android will always ask you to confirm.
+- If Android asks for permission to install unknown apps, allow Buzzer once, then tap Update again.
+- The update checker reads `downloads/buzzer-update.json` and downloads `downloads/buzzer-debug.apk`.
+- Bump `versionCode`, `versionName`, and `buzzer-update.json` whenever publishing a newer APK.
+
 Native alarm notes:
 
 - The web timer still handles alarms while Buzzer is open in a browser.

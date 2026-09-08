@@ -26,6 +26,7 @@ import {
 } from '@/lib/notifications';
 import { findWebsiteShortcut, parseOpenWebsiteCommand } from '@/lib/websites';
 import { openExternalUrl } from '@/lib/open-url';
+import { checkForAppUpdate, installAppUpdate, type AppUpdateInfo } from '@/lib/app-updater';
 import { getHistory, sendMessage, sendTestPush, type Message } from '@/api';
 
 import {
@@ -80,6 +81,7 @@ type Filter = 'all' | 'active' | 'paused';
 type NavTab = 'alarms' | 'marcus' | 'websites';
 type ServerPushStatus = 'unknown' | 'ready' | 'unsupported' | 'server_not_configured' | 'permission_not_granted' | 'sync_error';
 type NativeAlarmStatus = 'browser' | 'unknown' | 'ready' | 'permission_not_granted' | 'sync_error';
+type UpdateStatus = 'idle' | 'checking' | 'available' | 'current' | 'installing' | 'error';
 
 const STORAGE_KEY = 'morning-light-alarms';
 const palette = ['#E69C73', '#78B7A5', '#7E91C2', '#D6AE55', '#B48CBF', '#D67768'];
@@ -755,6 +757,9 @@ function Home() {
   const [serverPushStatus, setServerPushStatus] = useState<ServerPushStatus>('unknown');
   const [nativeAlarmStatus, setNativeAlarmStatus] = useState<NativeAlarmStatus>(() => (isNativeApp() ? 'unknown' : 'browser'));
   const [pushTestMessage, setPushTestMessage] = useState<string | null>(null);
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus>('idle');
+  const [updateInfo, setUpdateInfo] = useState<AppUpdateInfo | null>(null);
+  const [updateMessage, setUpdateMessage] = useState<string | null>(null);
   const shouldShowNotificationBanner = nativeApp
     ? nativeAlarmStatus !== 'ready'
     : !notifGranted || ['server_not_configured', 'unsupported', 'sync_error'].includes(serverPushStatus);
@@ -813,6 +818,26 @@ function Home() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!nativeApp) return;
+    let cancelled = false;
+
+    setUpdateStatus('checking');
+    checkForAppUpdate()
+      .then((info) => {
+        if (cancelled || !info) return;
+        setUpdateInfo(info);
+        setUpdateStatus(info.available ? 'available' : 'current');
+      })
+      .catch(() => {
+        if (!cancelled) setUpdateStatus('error');
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [nativeApp]);
+
   // Request Notification & unlock Audio
   const ensureAlarmPermissions = async () => {
     unlockAudio();
@@ -856,6 +881,35 @@ function Home() {
         ? 'Test push sent. You should see a system notification.'
         : 'No push was sent. Check that this device is subscribed and Railway has VAPID keys.',
     );
+  };
+
+  const handleCheckForUpdate = async () => {
+    setUpdateMessage(null);
+    setUpdateStatus('checking');
+    const info = await checkForAppUpdate().catch(() => null);
+    if (!info) {
+      setUpdateStatus('error');
+      setUpdateMessage('Could not check Railway for updates.');
+      return;
+    }
+    setUpdateInfo(info);
+    setUpdateStatus(info.available ? 'available' : 'current');
+    setUpdateMessage(info.available ? `Version ${info.latestVersionName} is ready.` : 'Buzzer is up to date.');
+  };
+
+  const handleInstallUpdate = async () => {
+    if (!updateInfo?.apkUrl) return;
+    setUpdateStatus('installing');
+    setUpdateMessage('Downloading update...');
+    await installAppUpdate(updateInfo.apkUrl)
+      .then(() => {
+        setUpdateMessage('Android installer opened. Confirm the install to finish updating.');
+        setUpdateStatus('available');
+      })
+      .catch((error: Error) => {
+        setUpdateStatus('available');
+        setUpdateMessage(error.message || 'Could not start the update installer.');
+      });
   };
 
   // Real-time Alarm Check Clock Loop (runs every 1 sec)
@@ -1251,14 +1305,42 @@ function Home() {
                 <div className="col-span-2 flex flex-col gap-4 rounded-[15px] border border-[hsl(var(--border))] bg-[hsl(var(--card)/.74)] px-5 py-5 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <div className="mono-label text-[hsl(var(--accent))]">Android app</div>
-                    <p className="mt-1 text-sm font-bold">Install Buzzer on your phone.</p>
+                    <p className="mt-1 text-sm font-bold">{nativeApp ? 'Keep Buzzer updated.' : 'Install Buzzer on your phone.'}</p>
                     <p className="mt-1 max-w-[360px] text-xs leading-5 text-[hsl(var(--muted-foreground))]">
-                      Includes native alarm notifications and the Marcus home-screen widget.
+                      {nativeApp
+                        ? updateStatus === 'available'
+                          ? `Version ${updateInfo?.latestVersionName ?? 'new'} is ready to install.`
+                          : updateStatus === 'current'
+                          ? 'You have the latest Android build.'
+                          : updateStatus === 'checking'
+                          ? 'Checking Railway for the latest APK.'
+                          : updateStatus === 'error'
+                          ? 'Update check could not reach Railway.'
+                          : 'Check Railway for the latest APK.'
+                        : 'Includes native alarm notifications and the Marcus home-screen widget.'}
                     </p>
+                    {updateMessage && <p className="mt-2 max-w-[360px] text-xs font-semibold text-[hsl(var(--muted-foreground))]">{updateMessage}</p>}
                   </div>
-                  <a href="/downloads/buzzer-debug.apk" download className="primary-button min-h-11 px-4 text-sm" data-testid="link-download-android-apk">
-                    <Download size={16} /> Download Android APK
-                  </a>
+                  {nativeApp ? (
+                    <div className="flex flex-wrap gap-2 sm:justify-end">
+                      <button type="button" onClick={handleCheckForUpdate} className="quiet-button min-h-11 px-4 text-sm" data-testid="button-check-android-update">
+                        Check
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleInstallUpdate}
+                        disabled={!updateInfo?.available || updateStatus === 'installing' || updateStatus === 'checking'}
+                        className="primary-button min-h-11 px-4 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                        data-testid="button-install-android-update"
+                      >
+                        <Download size={16} /> {updateStatus === 'installing' ? 'Downloading...' : 'Update'}
+                      </button>
+                    </div>
+                  ) : (
+                    <a href="/downloads/buzzer-debug.apk" download className="primary-button min-h-11 px-4 text-sm" data-testid="link-download-android-apk">
+                      <Download size={16} /> Download Android APK
+                    </a>
+                  )}
                 </div>
                 <HomeChatWidget onOpenChat={() => setActiveTab('marcus')} />
               </div>
