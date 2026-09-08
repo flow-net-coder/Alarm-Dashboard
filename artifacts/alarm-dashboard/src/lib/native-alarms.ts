@@ -37,15 +37,16 @@ export async function requestNativeAlarmPermissions() {
   if (!isNativeApp()) return false;
 
   const current = await LocalNotifications.checkPermissions();
-  if (current.display === 'granted') return true;
-
-  const requested = await LocalNotifications.requestPermissions();
-  if (requested.display !== 'granted') return false;
+  if (current.display !== 'granted') {
+    const requested = await LocalNotifications.requestPermissions();
+    if (requested.display !== 'granted') return false;
+  }
 
   try {
     const exact = await LocalNotifications.checkExactNotificationSetting();
     if (exact.exact_alarm !== 'granted') {
-      await LocalNotifications.changeExactNotificationSetting();
+      const changed = await LocalNotifications.changeExactNotificationSetting();
+      return changed.exact_alarm === 'granted';
     }
   } catch {
     // Exact alarm settings are Android-only; iOS/web do not need this path.
@@ -88,7 +89,6 @@ export async function scheduleNativeAlarm(alarm: Alarm) {
     foreground: true,
     isExactNotification: true,
     isExactMandatory: true,
-    smallIcon: 'ic_stat_icon_config_sample',
     iconColor: '#E69C73',
     extra: {
       alarmId: alarm.id,
@@ -96,6 +96,29 @@ export async function scheduleNativeAlarm(alarm: Alarm) {
   }));
 
   await LocalNotifications.schedule({ notifications });
+}
+
+export async function sendNativeTestNotification() {
+  if (!isNativeApp()) return false;
+
+  const granted = await requestNativeAlarmPermissions();
+  if (!granted) return false;
+
+  await LocalNotifications.schedule({
+    notifications: [
+      {
+        id: Date.now() % 2147483647,
+        title: 'Buzzer notifications are on',
+        body: 'Native Android alarms can now ring outside the app.',
+        schedule: { at: new Date(Date.now() + 1500), allowWhileIdle: true },
+        foreground: true,
+        iconColor: '#E69C73',
+        extra: { kind: 'native-test' },
+      },
+    ],
+  });
+
+  return true;
 }
 
 export async function syncNativeAlarms(alarms: Alarm[]) {

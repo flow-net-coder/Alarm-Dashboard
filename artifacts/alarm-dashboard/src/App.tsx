@@ -8,7 +8,14 @@ import NotFound from '@/pages/not-found';
 import { AiChatBox } from '@/components/AiChatBox';
 import { WebsitesView } from '@/components/WebsitesView';
 import { playSound, unlockAudio } from '@/lib/sound';
-import { cancelNativeAlarm, isNativeApp, requestNativeAlarmPermissions, scheduleNativeAlarm, syncNativeAlarms } from '@/lib/native-alarms';
+import {
+  cancelNativeAlarm,
+  isNativeApp,
+  requestNativeAlarmPermissions,
+  scheduleNativeAlarm,
+  sendNativeTestNotification,
+  syncNativeAlarms,
+} from '@/lib/native-alarms';
 import {
   getNotificationPermissionState,
   getDeviceId,
@@ -740,6 +747,7 @@ function Home() {
   const [modalAlarm, setModalAlarm] = useState<Alarm | null>(null);
   const [isAdding, setIsAdding] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const nativeApp = isNativeApp();
 
   // Notification & Audio permission state
   const [permissionStatus, setPermissionStatus] = useState<NotificationPermission | 'unsupported'>(() => getNotificationPermissionState());
@@ -747,9 +755,17 @@ function Home() {
   const [serverPushStatus, setServerPushStatus] = useState<ServerPushStatus>('unknown');
   const [nativeAlarmStatus, setNativeAlarmStatus] = useState<NativeAlarmStatus>(() => (isNativeApp() ? 'unknown' : 'browser'));
   const [pushTestMessage, setPushTestMessage] = useState<string | null>(null);
-  const shouldShowNotificationBanner = !notifGranted || ['server_not_configured', 'unsupported', 'sync_error'].includes(serverPushStatus);
+  const shouldShowNotificationBanner = nativeApp
+    ? nativeAlarmStatus !== 'ready'
+    : !notifGranted || ['server_not_configured', 'unsupported', 'sync_error'].includes(serverPushStatus);
   const notificationBannerMessage =
-    permissionStatus === 'denied'
+    nativeApp && nativeAlarmStatus === 'permission_not_granted'
+      ? 'Android notification or exact alarm permission is still off. Enable it so Buzzer can ring outside the app.'
+      : nativeApp && nativeAlarmStatus === 'sync_error'
+      ? 'Buzzer could not schedule Android alarms. Try enabling native alarms again.'
+      : nativeApp
+      ? 'Enable Android notifications and exact alarms so Buzzer can ring outside the app.'
+      : permissionStatus === 'denied'
       ? 'Notifications are blocked for this site. Browser popups still show while Buzzer is open.'
       : permissionStatus === 'unsupported'
       ? 'This browser does not support notifications. Buzzer popups still show while the app is open.'
@@ -800,12 +816,14 @@ function Home() {
   // Request Notification & unlock Audio
   const ensureAlarmPermissions = async () => {
     unlockAudio();
-    const granted = await requestNotificationPermission();
-    setPermissionStatus(getNotificationPermissionState());
-    if (isNativeApp()) {
+    if (nativeApp) {
       const nativeGranted = await requestNativeAlarmPermissions().catch(() => false);
       setNativeAlarmStatus(nativeGranted ? 'ready' : 'permission_not_granted');
+      return nativeGranted;
     }
+
+    const granted = await requestNotificationPermission();
+    setPermissionStatus(getNotificationPermissionState());
     const pushResult = await registerServerPush().catch(() => ({ enabled: false, reason: 'sync_error' as const }));
     setServerPushStatus(pushResult.enabled ? 'ready' : pushResult.reason ?? 'sync_error');
     return granted;
@@ -817,6 +835,13 @@ function Home() {
 
   const handleTestPush = async () => {
     setPushTestMessage(null);
+    if (nativeApp) {
+      const sent = await sendNativeTestNotification().catch(() => false);
+      setNativeAlarmStatus(sent ? 'ready' : 'permission_not_granted');
+      setPushTestMessage(sent ? 'Native test notification scheduled.' : 'Android notification or exact alarm permission is not enabled yet.');
+      return;
+    }
+
     const pushResult = await registerServerPush().catch(() => ({ enabled: false, reason: 'sync_error' as const }));
     setServerPushStatus(pushResult.enabled ? 'ready' : pushResult.reason ?? 'sync_error');
 
@@ -965,24 +990,24 @@ function Home() {
               <VolumeX size={18} className="text-amber-600 shrink-0" />
               <span>{notificationBannerMessage}</span>
             </div>
-            {permissionStatus !== 'denied' && permissionStatus !== 'unsupported' && (
+            {(nativeApp || (permissionStatus !== 'denied' && permissionStatus !== 'unsupported')) && (
               <div className="flex flex-wrap items-center gap-2">
-                {serverPushStatus !== 'server_not_configured' && (
+                {(nativeApp || serverPushStatus !== 'server_not_configured') && (
                   <button
                     type="button"
                     onClick={handleEnablePermissions}
                     className="rounded-xl bg-amber-600 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-amber-700 transition-colors shrink-0"
                   >
-                    Enable Notifications & Sounds
+                    {nativeApp ? 'Enable Native Alarms' : 'Enable Notifications & Sounds'}
                   </button>
                 )}
-                {serverPushStatus === 'ready' && (
+                {(nativeApp || serverPushStatus === 'ready') && (
                   <button
                     type="button"
                     onClick={handleTestPush}
                     className="rounded-xl border border-amber-600/30 bg-white/70 px-3.5 py-1.5 text-xs font-bold text-amber-900 hover:bg-white transition-colors shrink-0"
                   >
-                    Test Push
+                    {nativeApp ? 'Test Native Alarm' : 'Test Push'}
                   </button>
                 )}
               </div>
@@ -1203,7 +1228,15 @@ function Home() {
                     </p>
                   </div>
                   <div className="flex flex-col items-start gap-2 sm:items-end">
-                    {serverPushStatus === 'ready' ? (
+                    {nativeApp && nativeAlarmStatus === 'ready' ? (
+                      <button type="button" onClick={handleTestPush} className="quiet-button h-9 px-3 text-xs">
+                        Test Native
+                      </button>
+                    ) : nativeApp ? (
+                      <button type="button" onClick={handleEnablePermissions} className="quiet-button h-9 px-3 text-xs">
+                        Enable Native
+                      </button>
+                    ) : serverPushStatus === 'ready' ? (
                       <button type="button" onClick={handleTestPush} className="quiet-button h-9 px-3 text-xs">
                         Test Push
                       </button>
