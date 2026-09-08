@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import ChatScreen from './components/ChatScreen';
-import { getActions, getMarcusState, updateAction, type MarcusState } from './api';
+import { getActions, getMarcusState, updateAction, type MarcusState } from '../api';
 
 type TabKey = 'chat' | 'actions' | 'context';
 
