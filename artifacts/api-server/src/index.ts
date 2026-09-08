@@ -1,25 +1,33 @@
-import app from "./app";
-import { logger } from "./lib/logger";
+import 'dotenv/config';
+import app from './app';
+import cron from 'node-cron';
+import { runHeartbeat } from './lib/heartbeat';
+import { generateMarkdownFiles } from './lib/markdown';
 
-const rawPort = process.env["PORT"];
+const PORT = parseInt(process.env.PORT ?? '5000', 10);
 
-if (!rawPort) {
-  throw new Error(
-    "PORT environment variable is required but was not provided.",
-  );
-}
+app.listen(PORT, async () => {
+  console.log(`[marcus] API server running on port ${PORT}`);
+  console.log(`[marcus] Marcus name: ${process.env.MANAGER_NAME ?? 'Marcus'}`);
+  console.log(`[marcus] OpenRouter model: ${process.env.OPENROUTER_MODEL ?? 'openrouter/free'}`);
 
-const port = Number(rawPort);
-
-if (Number.isNaN(port) || port <= 0) {
-  throw new Error(`Invalid PORT value: "${rawPort}"`);
-}
-
-app.listen(port, (err) => {
-  if (err) {
-    logger.error({ err }, "Error listening on port");
-    process.exit(1);
+  // Generate initial .md files on startup
+  try {
+    await generateMarkdownFiles();
+    console.log('[marcus] Initial .md files generated in marcus-state/');
+  } catch (err) {
+    console.warn('[marcus] Could not generate initial .md files (DB may not be ready):', (err as Error).message);
   }
 
-  logger.info({ port }, "Server listening");
+  // Schedule hourly heartbeat
+  cron.schedule('0 * * * *', async () => {
+    console.log('[heartbeat] Scheduled run triggered');
+    try {
+      await runHeartbeat();
+    } catch (err) {
+      console.error('[heartbeat] Scheduled run failed:', err);
+    }
+  });
+
+  console.log('[marcus] Heartbeat scheduled: every hour at :00');
 });
