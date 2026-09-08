@@ -2,3 +2,6 @@ providers = ["node"]
 
 [variables]
 NIXPACKS_NODE_VERSION = "20"
+
+[start]
+cmd = "pnpm --filter ./artifacts/api-server start"

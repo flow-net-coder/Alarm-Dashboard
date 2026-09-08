@@ -7,7 +7,8 @@
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
-    "dev": "concurrently \"pnpm --filter ./artifacts/api-server dev\" \"pnpm --filter ./artifacts/alarm-dashboard dev\""
+    "dev": "concurrently \"pnpm --filter ./artifacts/api-server dev\" \"pnpm --filter ./artifacts/alarm-dashboard dev\"",
+    "start": "pnpm --filter ./artifacts/api-server start"
   },
   "private": true,
   "dependencies": {
