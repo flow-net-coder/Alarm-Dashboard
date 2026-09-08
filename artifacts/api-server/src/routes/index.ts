@@ -6,7 +6,6 @@ import heartbeatRouter from './heartbeat';
 
 const router = Router();
 
-router.get('/healthz', (_req, res) => res.json({ status: 'ok', service: 'marcus-api' }));
 
 router.use(chatRouter);
 router.use(actionsRouter);
