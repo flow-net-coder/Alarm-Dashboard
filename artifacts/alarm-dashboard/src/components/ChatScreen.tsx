@@ -179,18 +179,18 @@ export default function ChatScreen({ marcus, onMarcusUpdate }: Props) {
   const lastBeat = marcus?.lastHeartbeat;
 
   return (
-    <div className="flex h-full overflow-hidden">
+    <div className="flex h-full min-h-0 overflow-hidden">
       {/* ── Chat panel ─────────────────────────────────────── */}
       <div className="flex flex-col flex-1 min-w-0">
         {/* Header */}
-        <header className="flex items-center justify-between px-5 py-3 bg-white border-b border-gray-200 shadow-sm">
-          <div className="flex items-center gap-3">
+        <header className="flex flex-col gap-3 px-4 py-3 bg-white border-b border-gray-200 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:px-5">
+          <div className="flex min-w-0 items-center gap-3">
             <div className="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center text-white font-semibold text-sm">
               {managerName.charAt(0)}
             </div>
-            <div>
+            <div className="min-w-0">
               <div className="font-semibold text-gray-900 text-sm">{managerName}</div>
-              <div className="text-xs text-gray-500 flex items-center gap-1">
+              <div className="flex flex-wrap items-center gap-1 text-xs text-gray-500">
                 <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block"></span>
                 AI Manager
                 {lastBeat && (
@@ -202,19 +202,19 @@ export default function ChatScreen({ marcus, onMarcusUpdate }: Props) {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={handleHeartbeat}
               disabled={heartbeating}
               title="Run heartbeat — compile all updates and refresh manager state"
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 hover:border-gray-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex min-h-9 items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 transition-all hover:bg-gray-50 hover:border-gray-300 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <span className={heartbeating ? 'animate-pulse' : ''}>💓</span>
               {heartbeating ? 'Running…' : 'Heartbeat'}
             </button>
             <button
               onClick={() => setShowActions((p) => !p)}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 hover:border-gray-300 transition-all"
+              className="hidden min-h-9 items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 transition-all hover:bg-gray-50 hover:border-gray-300 sm:flex"
             >
               {showActions ? '→ Hide' : '← Actions'}
               {actions.length > 0 && (
@@ -272,7 +272,7 @@ export default function ChatScreen({ marcus, onMarcusUpdate }: Props) {
                 </div>
               )}
               <div
-                className={`max-w-[72%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed shadow-sm ${
+                className={`max-w-[86%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed shadow-sm sm:max-w-[72%] ${
                   msg.role === 'user'
                     ? 'bg-blue-600 text-white rounded-br-md'
                     : 'bg-white text-gray-800 border border-gray-100 rounded-bl-md'
@@ -341,7 +341,7 @@ export default function ChatScreen({ marcus, onMarcusUpdate }: Props) {
               </svg>
             </button>
           </div>
-          <p className="text-[10px] text-gray-400 mt-1.5 text-center">
+          <p className="hidden text-center text-[10px] text-gray-400 mt-1.5 sm:block">
             Enter to send · Shift+Enter for new line · Heartbeat runs hourly
           </p>
         </div>
@@ -349,7 +349,7 @@ export default function ChatScreen({ marcus, onMarcusUpdate }: Props) {
 
       {/* ── Action items panel ──────────────────────────────── */}
       {showActions && (
-        <aside className="w-72 shrink-0 bg-white border-l border-gray-200 flex flex-col overflow-hidden">
+        <aside className="hidden w-72 shrink-0 bg-white border-l border-gray-200 sm:flex flex-col overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-100">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold text-gray-800">

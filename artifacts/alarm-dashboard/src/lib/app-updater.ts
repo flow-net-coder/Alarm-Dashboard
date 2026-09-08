@@ -22,10 +22,13 @@ type UpdateManifest = {
 };
 
 const BuzzerUpdater = registerPlugin<BuzzerUpdaterPlugin>('BuzzerUpdater');
+const DEFAULT_APP_ORIGIN = 'https://flow-net-web-production.up.railway.app';
 
 function apiOrigin() {
   const apiBase = import.meta.env.VITE_API_URL as string | undefined;
-  if (!apiBase || apiBase.startsWith('/')) return window.location.origin;
+  if (!apiBase || apiBase.startsWith('/')) {
+    return Capacitor.isNativePlatform() ? DEFAULT_APP_ORIGIN : window.location.origin;
+  }
 
   const url = new URL(apiBase);
   if (url.pathname.endsWith('/api')) {

@@ -1,4 +1,5 @@
 const CONFIGURED_BASE = import.meta.env.VITE_API_URL as string | undefined;
+const DEFAULT_REMOTE_BASE = 'https://flow-net-web-production.up.railway.app/api';
 const API_URL_STORAGE_KEY = 'buzzer-api-url';
 
 export function normalizeApiBaseUrl(value: string) {
@@ -9,7 +10,7 @@ export function normalizeApiBaseUrl(value: string) {
 
 export function getApiBaseUrl() {
   const savedBase = localStorage.getItem(API_URL_STORAGE_KEY);
-  return savedBase || CONFIGURED_BASE || '/api';
+  return savedBase || CONFIGURED_BASE || DEFAULT_REMOTE_BASE;
 }
 
 export function saveApiBaseUrl(value: string) {

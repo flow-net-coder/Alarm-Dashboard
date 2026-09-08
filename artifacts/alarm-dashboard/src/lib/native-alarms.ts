@@ -45,8 +45,7 @@ export async function requestNativeAlarmPermissions() {
   try {
     const exact = await LocalNotifications.checkExactNotificationSetting();
     if (exact.exact_alarm !== 'granted') {
-      const changed = await LocalNotifications.changeExactNotificationSetting();
-      return changed.exact_alarm === 'granted';
+      await LocalNotifications.changeExactNotificationSetting();
     }
   } catch {
     // Exact alarm settings are Android-only; iOS/web do not need this path.
@@ -88,7 +87,7 @@ export async function scheduleNativeAlarm(alarm: Alarm) {
     sound: undefined,
     foreground: true,
     isExactNotification: true,
-    isExactMandatory: true,
+    isExactMandatory: false,
     iconColor: '#E69C73',
     extra: {
       alarmId: alarm.id,
@@ -123,5 +122,7 @@ export async function sendNativeTestNotification() {
 
 export async function syncNativeAlarms(alarms: Alarm[]) {
   if (!isNativeApp()) return;
+  const current = await LocalNotifications.checkPermissions();
+  if (current.display !== 'granted') return;
   await Promise.all(alarms.map((alarm) => (alarm.enabled ? scheduleNativeAlarm(alarm) : cancelNativeAlarm(alarm))));
 }

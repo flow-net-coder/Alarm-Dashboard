@@ -3,6 +3,10 @@ import { runHeartbeat } from '../lib/heartbeat';
 
 const router = Router();
 
+router.get('/healthz', (_req, res) => {
+  res.json({ ok: true, service: 'buzzer-api' });
+});
+
 /**
  * POST /api/heartbeat
  * Manually trigger a heartbeat (also runs automatically every hour).
