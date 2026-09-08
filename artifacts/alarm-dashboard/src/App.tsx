@@ -1191,7 +1191,7 @@ function Home() {
                   </div>
                   <div className="mt-2 text-xs text-[hsl(var(--muted-foreground))]">your average</div>
                 </div>
-                <div className="col-span-2 flex items-center justify-between rounded-[15px] border border-[hsl(var(--border))] bg-[hsl(var(--accent)/.12)] px-5 py-4">
+                <div className="col-span-2 flex flex-col gap-4 rounded-[15px] border border-[hsl(var(--border))] bg-[hsl(var(--accent)/.12)] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <div className="mono-label text-[hsl(var(--accent))]">A tiny promise</div>
                     <p className="mt-1 text-sm font-bold">Keep the morning yours.</p>
@@ -1202,10 +1202,7 @@ function Home() {
                       Native alarms: {nativeAlarmStatus === 'browser' ? 'web mode' : nativeAlarmStatus.replace(/_/g, ' ')}
                     </p>
                   </div>
-                  <div className="flex flex-col items-end gap-2">
-                    <a href="/downloads/buzzer-debug.apk" download className="quiet-button h-9 px-3 text-xs">
-                      <Download size={14} /> APK
-                    </a>
+                  <div className="flex flex-col items-start gap-2 sm:items-end">
                     {serverPushStatus === 'ready' ? (
                       <button type="button" onClick={handleTestPush} className="quiet-button h-9 px-3 text-xs">
                         Test Push
@@ -1217,6 +1214,18 @@ function Home() {
                     )}
                     {pushTestMessage && <span className="max-w-[180px] text-right text-[10px] font-semibold text-[hsl(var(--muted-foreground))]">{pushTestMessage}</span>}
                   </div>
+                </div>
+                <div className="col-span-2 flex flex-col gap-4 rounded-[15px] border border-[hsl(var(--border))] bg-[hsl(var(--card)/.74)] px-5 py-5 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <div className="mono-label text-[hsl(var(--accent))]">Android app</div>
+                    <p className="mt-1 text-sm font-bold">Install Buzzer on your phone.</p>
+                    <p className="mt-1 max-w-[360px] text-xs leading-5 text-[hsl(var(--muted-foreground))]">
+                      Includes native alarm notifications and the Marcus home-screen widget.
+                    </p>
+                  </div>
+                  <a href="/downloads/buzzer-debug.apk" download className="primary-button min-h-11 px-4 text-sm" data-testid="link-download-android-apk">
+                    <Download size={16} /> Download Android APK
+                  </a>
                 </div>
                 <HomeChatWidget onOpenChat={() => setActiveTab('marcus')} />
               </div>
