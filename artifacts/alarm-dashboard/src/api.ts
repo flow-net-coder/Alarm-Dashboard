@@ -1,4 +1,26 @@
-const BASE = import.meta.env.VITE_API_URL ?? '/api';
+const CONFIGURED_BASE = import.meta.env.VITE_API_URL as string | undefined;
+const API_URL_STORAGE_KEY = 'buzzer-api-url';
+
+export function normalizeApiBaseUrl(value: string) {
+  const trimmed = value.trim().replace(/\/+$/, '');
+  if (!trimmed) return '';
+  return trimmed.endsWith('/api') ? trimmed : `${trimmed}/api`;
+}
+
+export function getApiBaseUrl() {
+  const savedBase = localStorage.getItem(API_URL_STORAGE_KEY);
+  return savedBase || CONFIGURED_BASE || '/api';
+}
+
+export function saveApiBaseUrl(value: string) {
+  const normalized = normalizeApiBaseUrl(value);
+  if (normalized) {
+    localStorage.setItem(API_URL_STORAGE_KEY, normalized);
+  } else {
+    localStorage.removeItem(API_URL_STORAGE_KEY);
+  }
+  return normalized;
+}
 
 export interface Message {
   id: string;
@@ -38,16 +60,22 @@ export interface PushPublicKeyResponse {
 }
 
 async function json<T>(res: Response): Promise<T> {
+  const contentType = res.headers.get('content-type') || '';
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
+    const err = contentType.includes('application/json')
+      ? await res.json().catch(() => ({ error: res.statusText }))
+      : { error: await res.text().then(() => res.statusText).catch(() => res.statusText) };
     throw new Error((err as { error: string }).error ?? res.statusText);
+  }
+  if (!contentType.includes('application/json')) {
+    throw new Error('Marcus API returned a web page instead of JSON. Set the APK API URL to your Railway /api URL.');
   }
   return res.json() as Promise<T>;
 }
 
 export async function sendMessage(message: string): Promise<{ reply: string; timestamp: string }> {
   return json(
-    await fetch(`${BASE}/chat`, {
+    await fetch(`${getApiBaseUrl()}/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message }),
@@ -57,14 +85,14 @@ export async function sendMessage(message: string): Promise<{ reply: string; tim
 
 export async function getHistory(limit = 60): Promise<Message[]> {
   const data = await json<{ messages: Message[] }>(
-    await fetch(`${BASE}/chat/history?limit=${limit}`),
+    await fetch(`${getApiBaseUrl()}/chat/history?limit=${limit}`),
   );
   return data.messages;
 }
 
 export async function getActions(status?: string): Promise<ActionItem[]> {
   const q = status ? `?status=${status}` : '';
-  const data = await json<{ actions: ActionItem[] }>(await fetch(`${BASE}/actions${q}`));
+  const data = await json<{ actions: ActionItem[] }>(await fetch(`${getApiBaseUrl()}/actions${q}`));
   return data.actions;
 }
 
@@ -73,7 +101,7 @@ export async function updateAction(
   status: string,
 ): Promise<ActionItem> {
   return json(
-    await fetch(`${BASE}/actions/${id}`, {
+    await fetch(`${getApiBaseUrl()}/actions/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status }),
@@ -82,7 +110,7 @@ export async function updateAction(
 }
 
 export async function getMarcusState(): Promise<MarcusState> {
-  return json(await fetch(`${BASE}/marcus`));
+  return json(await fetch(`${getApiBaseUrl()}/marcus`));
 }
 
 export async function triggerHeartbeat(): Promise<{
@@ -91,12 +119,12 @@ export async function triggerHeartbeat(): Promise<{
   actionItemsCreated: number;
   ranAt: string;
 }> {
-  return json(await fetch(`${BASE}/heartbeat`, { method: 'POST' }));
+  return json(await fetch(`${getApiBaseUrl()}/heartbeat`, { method: 'POST' }));
 }
 
 export async function setMarcusContext(updates: Record<string, string>): Promise<void> {
   await json(
-    await fetch(`${BASE}/marcus/context`, {
+    await fetch(`${getApiBaseUrl()}/marcus/context`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updates),
@@ -105,7 +133,7 @@ export async function setMarcusContext(updates: Record<string, string>): Promise
 }
 
 export async function getPushPublicKey(): Promise<PushPublicKeyResponse> {
-  return json(await fetch(`${BASE}/push/public-key`));
+  return json(await fetch(`${getApiBaseUrl()}/push/public-key`));
 }
 
 export async function savePushSubscription(
@@ -114,7 +142,7 @@ export async function savePushSubscription(
   timezone: string,
 ): Promise<void> {
   await json(
-    await fetch(`${BASE}/push/subscribe`, {
+    await fetch(`${getApiBaseUrl()}/push/subscribe`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ deviceId, subscription, timezone }),
@@ -128,7 +156,7 @@ export async function syncPushAlarms(
   timezone: string,
 ): Promise<void> {
   await json(
-    await fetch(`${BASE}/push/alarms`, {
+    await fetch(`${getApiBaseUrl()}/push/alarms`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ deviceId, alarms, timezone }),
@@ -138,7 +166,7 @@ export async function syncPushAlarms(
 
 export async function sendTestPush(deviceId: string): Promise<{ sent: number; subscriptions: number }> {
   return json(
-    await fetch(`${BASE}/push/test`, {
+    await fetch(`${getApiBaseUrl()}/push/test`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ deviceId }),

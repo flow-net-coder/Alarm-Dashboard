@@ -13,7 +13,7 @@ const dayToJsDay: Record<string, number> = {
 };
 
 export function isNativeApp() {
-  return Capacitor.isNativePlatform();
+  return Capacitor.isNativePlatform() || Capacitor.getPlatform() !== 'web';
 }
 
 function notificationId(alarm: Alarm, day: string) {

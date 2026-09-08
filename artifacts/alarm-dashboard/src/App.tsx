@@ -789,13 +789,15 @@ function Home() {
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(alarms));
-    syncAlarmsForServerPush(alarms)
-      .then(() => setServerPushStatus((status) => (status === 'sync_error' ? 'unknown' : status)))
-      .catch(() => setServerPushStatus('sync_error'));
+    if (!nativeApp) {
+      syncAlarmsForServerPush(alarms)
+        .then(() => setServerPushStatus((status) => (status === 'sync_error' ? 'unknown' : status)))
+        .catch(() => setServerPushStatus('sync_error'));
+    }
     syncNativeAlarms(alarms)
       .then(() => setNativeAlarmStatus((status) => (status === 'sync_error' ? 'ready' : status)))
       .catch(() => setNativeAlarmStatus('sync_error'));
-  }, [alarms]);
+  }, [alarms, nativeApp]);
 
   useEffect(() => {
     const applyLaunchTarget = (url: string) => {
@@ -1274,12 +1276,20 @@ function Home() {
                   <div>
                     <div className="mono-label text-[hsl(var(--accent))]">A tiny promise</div>
                     <p className="mt-1 text-sm font-bold">Keep the morning yours.</p>
-                    <p className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">
-                      Closed-tab push: {serverPushStatus === 'ready' ? 'ready' : serverPushStatus.replace(/_/g, ' ')}
-                    </p>
-                    <p className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">
-                      Native alarms: {nativeAlarmStatus === 'browser' ? 'web mode' : nativeAlarmStatus.replace(/_/g, ' ')}
-                    </p>
+                    {nativeApp ? (
+                      <p className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">
+                        Native alarms: {nativeAlarmStatus.replace(/_/g, ' ')}
+                      </p>
+                    ) : (
+                      <>
+                        <p className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">
+                          Closed-tab push: {serverPushStatus === 'ready' ? 'ready' : serverPushStatus.replace(/_/g, ' ')}
+                        </p>
+                        <p className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">
+                          Native alarms: web mode
+                        </p>
+                      </>
+                    )}
                   </div>
                   <div className="flex flex-col items-start gap-2 sm:items-end">
                     {nativeApp && nativeAlarmStatus === 'ready' ? (
