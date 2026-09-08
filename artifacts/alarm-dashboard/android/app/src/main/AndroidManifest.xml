@@ -31,6 +31,12 @@
 
         </activity>
 
+        <activity
+            android:name=".QuickMarcusActivity"
+            android:label="Ask Marcus"
+            android:theme="@style/AppTheme.NoActionBar"
+            android:exported="false" />
+
         <receiver
             android:name=".MarcusWidgetProvider"
             android:exported="true">

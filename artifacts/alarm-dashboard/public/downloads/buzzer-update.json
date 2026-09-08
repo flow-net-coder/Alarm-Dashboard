@@ -1,6 +1,6 @@
 {
-  "versionCode": 6,
-  "versionName": "1.5",
+  "versionCode": 7,
+  "versionName": "1.6",
   "apkUrl": "/downloads/buzzer-debug.apk",
-  "notes": "Lets Marcus create real alarms, improves native alarm scheduling, uses normal Android notification sound, hides API URL setup, and fixes update cache checks."
+  "notes": "Adds the quick Marcus widget chat screen, bundles the Buzzer alarm sound, and requires exact native alarm scheduling."
 }

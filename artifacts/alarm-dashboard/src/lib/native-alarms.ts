@@ -2,6 +2,9 @@ import { Capacitor } from '@capacitor/core';
 import { LocalNotifications, type ScheduleOptions } from '@capacitor/local-notifications';
 import type { Alarm } from '@/App';
 
+const ALARM_CHANNEL_ID = 'buzzer_alarm_v2';
+const ALARM_SOUND = 'buzzer_alarm.wav';
+
 const dayToDateDay: Record<string, number> = {
   su: 0,
   mo: 1,
@@ -46,6 +49,22 @@ function nextOccurrence(day: string, hour: number, minute: number) {
   return target;
 }
 
+async function ensureAlarmChannel() {
+  if (!isNativeApp()) return;
+
+  await LocalNotifications.createChannel({
+    id: ALARM_CHANNEL_ID,
+    name: 'Buzzer alarms',
+    description: 'Alarm notifications from Buzzer.',
+    importance: 5,
+    visibility: 1,
+    vibration: true,
+    lights: true,
+    lightColor: '#E69C73',
+    sound: ALARM_SOUND,
+  }).catch(() => undefined);
+}
+
 export async function requestNativeAlarmPermissions() {
   if (!isNativeApp()) return false;
 
@@ -56,14 +75,16 @@ export async function requestNativeAlarmPermissions() {
   }
 
   try {
-    const exact = await LocalNotifications.checkExactNotificationSetting();
+    let exact = await LocalNotifications.checkExactNotificationSetting();
     if (exact.exact_alarm !== 'granted') {
-      await LocalNotifications.changeExactNotificationSetting();
+      exact = await LocalNotifications.changeExactNotificationSetting();
     }
+    if (exact.exact_alarm !== 'granted') return false;
   } catch {
     // Exact alarm settings are Android-only; iOS/web do not need this path.
   }
 
+  await ensureAlarmChannel();
   return true;
 }
 
@@ -94,17 +115,21 @@ export async function scheduleNativeAlarm(alarm: Alarm) {
       repeats: true,
       allowWhileIdle: true,
     },
-    sound: undefined,
+    channelId: ALARM_CHANNEL_ID,
+    sound: ALARM_SOUND,
     foreground: true,
     isExactNotification: true,
-    isExactMandatory: false,
+    isExactMandatory: true,
     iconColor: '#E69C73',
     extra: {
       alarmId: alarm.id,
     },
   }));
 
-  await LocalNotifications.schedule({ notifications });
+  const result = await LocalNotifications.schedule({ notifications });
+  if (result.warning) {
+    throw new Error(result.warning.message);
+  }
 }
 
 export async function sendNativeTestNotification() {
@@ -120,6 +145,8 @@ export async function sendNativeTestNotification() {
         title: 'Buzzer notifications are on',
         body: 'Native Android alarms can now ring outside the app.',
         schedule: { at: new Date(Date.now() + 1500), allowWhileIdle: true },
+        channelId: ALARM_CHANNEL_ID,
+        sound: ALARM_SOUND,
         foreground: true,
         iconColor: '#E69C73',
         extra: { kind: 'native-test' },

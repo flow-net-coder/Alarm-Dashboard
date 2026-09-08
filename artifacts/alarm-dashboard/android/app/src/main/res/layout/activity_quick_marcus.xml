@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#FFF8ED"
+    android:orientation="vertical"
+    android:padding="20dp">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Ask Marcus"
+        android:textColor="#111827"
+        android:textSize="24sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/quick_marcus_reply"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="12dp"
+        android:layout_weight="1"
+        android:background="@drawable/quick_marcus_field"
+        android:gravity="top"
+        android:text="Latest reply will show here."
+        android:textColor="#374151"
+        android:textSize="15sp" />
+
+    <EditText
+        android:id="@+id/quick_marcus_input"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:layout_marginTop="14dp"
+        android:background="@drawable/quick_marcus_field"
+        android:hint="Message Marcus"
+        android:imeOptions="actionSend"
+        android:inputType="textCapSentences|textMultiLine"
+        android:maxLines="3"
+        android:textColor="#111827"
+        android:textColorHint="#6B7280"
+        android:textSize="16sp" />
+
+    <Button
+        android:id="@+id/quick_marcus_send"
+        android:layout_width="match_parent"
+        android:layout_height="52dp"
+        android:layout_marginTop="12dp"
+        android:backgroundTint="#1F2937"
+        android:text="Send"
+        android:textColor="#FFFFFF"
+        android:textStyle="bold" />
+</LinearLayout>
