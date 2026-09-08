@@ -1,15 +1,15 @@
 import { Capacitor } from '@capacitor/core';
-import { LocalNotifications, Weekday, type ScheduleOptions } from '@capacitor/local-notifications';
+import { LocalNotifications, type ScheduleOptions } from '@capacitor/local-notifications';
 import type { Alarm } from '@/App';
 
-const dayToJsDay: Record<string, number> = {
-  su: Weekday.Sunday,
-  mo: Weekday.Monday,
-  tu: Weekday.Tuesday,
-  we: Weekday.Wednesday,
-  th: Weekday.Thursday,
-  fr: Weekday.Friday,
-  sa: Weekday.Saturday,
+const dayToDateDay: Record<string, number> = {
+  su: 0,
+  mo: 1,
+  tu: 2,
+  we: 3,
+  th: 4,
+  fr: 5,
+  sa: 6,
 };
 
 export function isNativeApp() {
@@ -31,6 +31,19 @@ function parseAlarmTime(alarm: Alarm) {
   if (alarm.meridiem === 'AM' && hour === 12) hour = 0;
   if (alarm.meridiem === 'PM' && hour !== 12) hour += 12;
   return { hour, minute: rawMinute || 0 };
+}
+
+function nextOccurrence(day: string, hour: number, minute: number) {
+  const target = new Date();
+  target.setHours(hour, minute, 0, 0);
+
+  const targetDay = dayToDateDay[day] ?? target.getDay();
+  let daysUntil = (targetDay - target.getDay() + 7) % 7;
+  if (daysUntil === 0 && target.getTime() <= Date.now()) {
+    daysUntil = 7;
+  }
+  target.setDate(target.getDate() + daysUntil);
+  return target;
 }
 
 export async function requestNativeAlarmPermissions() {
@@ -76,11 +89,8 @@ export async function scheduleNativeAlarm(alarm: Alarm) {
     title: alarm.label || 'Alarm Ding!',
     body: alarm.note || `Time: ${alarm.time} ${alarm.meridiem}`,
     schedule: {
-      on: {
-        weekday: dayToJsDay[day],
-        hour,
-        minute,
-      },
+      at: nextOccurrence(day, hour, minute),
+      every: 'week',
       repeats: true,
       allowWhileIdle: true,
     },

@@ -121,6 +121,7 @@ WHAT YOU TRACK:
 - Important people and relationships
 - Deadlines and time-sensitive items
 - Saved website shortcuts that the Buzzer client can open when the user asks
+- Alarm requests that the Buzzer client can turn into real enabled alarms
 
 ${contextLines ? `WHAT YOU KNOW ABOUT ${userName.toUpperCase()}:\n${contextLines}\n` : ''}
 ${pendingActions.length > 0 ? `CURRENT PENDING ACTION ITEMS (${pendingActions.length} total):\n${actionLines}\n` : ''}
@@ -128,6 +129,6 @@ IMPORTANT RULES:
 - When ${userName} mentions something actionable, always confirm: "Got it, I've noted..." or "I'll flag that for follow-up."
 - Never make up facts you weren't told
 - If you're unsure about a date or detail, ask for clarification
-- You cannot send emails or make calls yourself. You can help open saved website shortcuts when the Buzzer client has a matching shortcut.
+- You cannot send emails or make calls yourself. You can help open saved website shortcuts and set alarms when the Buzzer client detects a matching request.
 - Responses should be 1–4 sentences unless detail is needed`;
 }

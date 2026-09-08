@@ -1,17 +1,14 @@
 import { useEffect, useState } from 'react';
 import ChatScreen from './ChatScreen';
-import { getActions, getApiBaseUrl, getMarcusState, saveApiBaseUrl, updateAction, type MarcusState, type ActionItem } from '../api';
-import { isNativeApp } from '@/lib/native-alarms';
+import { getActions, getMarcusState, updateAction, type MarcusState, type ActionItem } from '../api';
+import type { Alarm } from '@/App';
 
 type TabKey = 'chat' | 'actions' | 'context';
 
-export function AiChatBox() {
+export function AiChatBox({ onCreateAlarm }: { onCreateAlarm?: (alarm: Alarm) => void }) {
   const [marcus, setMarcus] = useState<MarcusState | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>('chat');
   const [pendingActions, setPendingActions] = useState(0);
-  const nativeApp = isNativeApp();
-  const [apiUrlInput, setApiUrlInput] = useState(() => (getApiBaseUrl() === '/api' ? '' : getApiBaseUrl()));
-  const [apiUrlMessage, setApiUrlMessage] = useState<string | null>(null);
 
   useEffect(() => {
     getMarcusState()
@@ -51,13 +48,6 @@ export function AiChatBox() {
     getMarcusState().then(setMarcus).catch(console.error);
   };
 
-  const saveApiUrl = () => {
-    const nextUrl = saveApiBaseUrl(apiUrlInput);
-    setApiUrlInput(nextUrl);
-    setApiUrlMessage(nextUrl ? 'Marcus API URL saved.' : 'Marcus API URL cleared.');
-    refreshMarcus();
-  };
-
   const tabClass = (tab: TabKey) =>
     `rounded-full px-4 py-2 text-sm font-medium transition-colors ${
       activeTab === tab
@@ -85,25 +75,8 @@ export function AiChatBox() {
         </div>
       </header>
 
-      {nativeApp && (
-        <div className="border-b border-blue-100 bg-blue-50/80 px-5 py-3">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <input
-              value={apiUrlInput}
-              onChange={(event) => setApiUrlInput(event.target.value)}
-              placeholder="https://your-buzzer-production-url.up.railway.app"
-              className="min-h-10 flex-1 rounded-xl border border-blue-100 bg-white px-3 text-sm text-slate-900 outline-none focus:border-blue-400"
-            />
-            <button type="button" onClick={saveApiUrl} className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">
-              Save API URL
-            </button>
-          </div>
-          {apiUrlMessage && <p className="mt-2 text-xs font-semibold text-blue-700">{apiUrlMessage}</p>}
-        </div>
-      )}
-
       <main className="flex-1 min-h-0">
-        {activeTab === 'chat' && <ChatScreen marcus={marcus} onMarcusUpdate={refreshMarcus} />}
+        {activeTab === 'chat' && <ChatScreen marcus={marcus} onMarcusUpdate={refreshMarcus} onCreateAlarm={onCreateAlarm} />}
 
         {activeTab === 'actions' && (
           <section className="h-full overflow-y-auto px-4 py-5 sm:px-6 lg:px-8">

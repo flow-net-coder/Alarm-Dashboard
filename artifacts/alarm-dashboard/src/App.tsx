@@ -27,6 +27,7 @@ import {
 import { findWebsiteShortcut, parseOpenWebsiteCommand } from '@/lib/websites';
 import { openExternalUrl } from '@/lib/open-url';
 import { checkForAppUpdate, installAppUpdate, type AppUpdateInfo } from '@/lib/app-updater';
+import { parseAlarmCommand } from '@/lib/alarm-commands';
 import { getHistory, sendMessage, sendTestPush, type Message } from '@/api';
 
 import {
@@ -600,7 +601,7 @@ function AlarmModal({
   );
 }
 
-function HomeChatWidget({ onOpenChat }: { onOpenChat: () => void }) {
+function HomeChatWidget({ onOpenChat, onCreateAlarm }: { onOpenChat: () => void; onCreateAlarm: (alarm: Alarm) => void }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
@@ -661,6 +662,22 @@ function HomeChatWidget({ onOpenChat }: { onOpenChat: () => void }) {
       if (site) {
         void openExternalUrl(site.url);
       }
+      return;
+    }
+
+    const alarm = parseAlarmCommand(text);
+    if (alarm) {
+      const assistantMessage: Message = {
+        id: `home-chat-reply-${Date.now()}`,
+        role: 'assistant',
+        content: `Done. I set "${alarm.label}" for ${alarm.time} ${alarm.meridiem}.`,
+        sessionDate: now.split('T')[0]!,
+        createdAt: new Date().toISOString(),
+      };
+
+      onCreateAlarm(alarm);
+      setMessages((current) => [...current.slice(-3), assistantMessage]);
+      setSending(false);
       return;
     }
 
@@ -857,7 +874,10 @@ function Home() {
   };
 
   const handleEnablePermissions = async () => {
-    await ensureAlarmPermissions();
+    const granted = await ensureAlarmPermissions();
+    if (nativeApp && granted) {
+      await syncNativeAlarms(alarms).catch(() => setNativeAlarmStatus('sync_error'));
+    }
   };
 
   const handleTestPush = async () => {
@@ -995,6 +1015,14 @@ function Home() {
     );
     setModalAlarm(null);
     setIsAdding(false);
+  };
+
+  const createAlarmFromMarcus = (alarm: Alarm) => {
+    setAlarms((current) => [alarm, ...current]);
+    if (alarm.enabled) {
+      void ensureAlarmPermissions();
+      void scheduleNativeAlarm(alarm).catch(() => setNativeAlarmStatus('sync_error'));
+    }
   };
 
   const deleteAlarm = (alarm: Alarm) => {
@@ -1199,7 +1227,7 @@ function Home() {
         {/* Tab Content Views */}
         {activeTab === 'marcus' && (
           <div className="mt-6 h-[80vh] rounded-3xl border border-slate-200 bg-white overflow-hidden shadow-sm">
-            <AiChatBox />
+            <AiChatBox onCreateAlarm={createAlarmFromMarcus} />
           </div>
         )}
 
@@ -1321,7 +1349,7 @@ function Home() {
                         ? updateStatus === 'available'
                           ? `Version ${updateInfo?.latestVersionName ?? 'new'} is ready to install.`
                           : updateStatus === 'current'
-                          ? 'You have the latest Android build.'
+                          ? `You have the latest Android build (${updateInfo?.currentVersionCode ?? '?'} / ${updateInfo?.latestVersionCode ?? '?'}).`
                           : updateStatus === 'checking'
                           ? 'Checking Railway for the latest APK.'
                           : updateStatus === 'error'
@@ -1352,7 +1380,7 @@ function Home() {
                     </a>
                   )}
                 </div>
-                <HomeChatWidget onOpenChat={() => setActiveTab('marcus')} />
+                <HomeChatWidget onOpenChat={() => setActiveTab('marcus')} onCreateAlarm={createAlarmFromMarcus} />
               </div>
             </section>
 

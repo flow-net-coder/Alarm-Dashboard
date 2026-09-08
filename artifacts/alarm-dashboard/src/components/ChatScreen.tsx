@@ -11,10 +11,13 @@ import {
 } from '../api';
 import { findWebsiteShortcut, parseOpenWebsiteCommand } from '@/lib/websites';
 import { openExternalUrl } from '@/lib/open-url';
+import { parseAlarmCommand } from '@/lib/alarm-commands';
+import type { Alarm } from '@/App';
 
 interface Props {
   marcus: MarcusState | null;
   onMarcusUpdate: () => void;
+  onCreateAlarm?: (alarm: Alarm) => void;
 }
 
 const TYPE_ICON: Record<string, string> = {
@@ -33,7 +36,7 @@ const STATUS_COLOR: Record<string, string> = {
   cancelled: 'bg-gray-100 text-gray-500',
 };
 
-export default function ChatScreen({ marcus, onMarcusUpdate }: Props) {
+export default function ChatScreen({ marcus, onMarcusUpdate, onCreateAlarm }: Props) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [actions, setActions] = useState<ActionItem[]>([]);
   const [input, setInput] = useState('');
@@ -104,6 +107,30 @@ export default function ChatScreen({ marcus, onMarcusUpdate }: Props) {
       if (site) {
         void openExternalUrl(site.url);
       }
+      inputRef.current?.focus();
+      return;
+    }
+
+    const alarm = parseAlarmCommand(text);
+    if (alarm && onCreateAlarm) {
+      const now = new Date().toISOString();
+      const tempUserMsg: Message = {
+        id: `temp-${Date.now()}`,
+        role: 'user',
+        content: text,
+        sessionDate: now.split('T')[0]!,
+        createdAt: now,
+      };
+      const assistantMsg: Message = {
+        id: `temp-ai-${Date.now()}`,
+        role: 'assistant',
+        content: `Done. I set "${alarm.label}" for ${alarm.time} ${alarm.meridiem}.`,
+        sessionDate: now.split('T')[0]!,
+        createdAt: new Date().toISOString(),
+      };
+
+      onCreateAlarm(alarm);
+      setMessages((prev) => [...prev, tempUserMsg, assistantMsg]);
       inputRef.current?.focus();
       return;
     }

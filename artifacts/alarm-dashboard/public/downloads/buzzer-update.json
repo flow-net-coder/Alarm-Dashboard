@@ -1,6 +1,6 @@
 {
-  "versionCode": 5,
-  "versionName": "1.4",
+  "versionCode": 6,
+  "versionName": "1.5",
   "apkUrl": "/downloads/buzzer-debug.apk",
-  "notes": "Bakes in the Railway API URL, fixes Marcus JSON errors, improves mobile chat layout, and avoids native alarm sync errors before permission is granted."
+  "notes": "Lets Marcus create real alarms, improves native alarm scheduling, uses normal Android notification sound, hides API URL setup, and fixes update cache checks."
 }

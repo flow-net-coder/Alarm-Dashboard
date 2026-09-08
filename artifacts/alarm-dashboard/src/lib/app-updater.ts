@@ -41,12 +41,18 @@ function absoluteUrl(pathOrUrl: string) {
   return new URL(pathOrUrl, `${apiOrigin()}/`).toString();
 }
 
+function cacheBusted(url: string) {
+  const nextUrl = new URL(url);
+  nextUrl.searchParams.set('t', String(Date.now()));
+  return nextUrl.toString();
+}
+
 export async function checkForAppUpdate(): Promise<AppUpdateInfo | null> {
   if (!Capacitor.isNativePlatform()) return null;
 
   const [appInfo, manifest] = await Promise.all([
     CapacitorApp.getInfo(),
-    fetch(absoluteUrl('/downloads/buzzer-update.json'), { cache: 'no-store' }).then((res) => {
+    fetch(cacheBusted(absoluteUrl('/downloads/buzzer-update.json')), { cache: 'no-store' }).then((res) => {
       if (!res.ok) throw new Error('Could not check for updates');
       return res.json() as Promise<UpdateManifest>;
     }),
