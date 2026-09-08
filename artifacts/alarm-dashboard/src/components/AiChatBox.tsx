@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import ChatScreen from './components/ChatScreen';
-import { getActions, getMarcusState, updateAction, type MarcusState } from '../api';
+import ChatScreen from './ChatScreen';
+import { getActions, getMarcusState, updateAction, type MarcusState, type ActionItem } from '../api';
 
 type TabKey = 'chat' | 'actions' | 'context';
 
@@ -182,14 +182,14 @@ export function AiChatBox() {
 }
 
 function ActionsSummary({ marcus }: { marcus: MarcusState | null }) {
-  const [actions, setActions] = useState<Awaited<ReturnType<typeof getActions>>>([]);
+  const [actions, setActions] = useState<ActionItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
     const refresh = () => {
       getActions('pending')
-        .then((rows) => {
+        .then((rows: ActionItem[]) => {
           if (!cancelled) {
             setActions(rows);
             setLoading(false);
@@ -213,7 +213,7 @@ function ActionsSummary({ marcus }: { marcus: MarcusState | null }) {
 
   const markDone = async (id: string) => {
     await updateAction(id, 'done');
-    setActions((prev) => prev.filter((item) => item.id !== id));
+    setActions((prev: ActionItem[]) => prev.filter((item: ActionItem) => item.id !== id));
   };
 
   return (
@@ -236,7 +236,7 @@ function ActionsSummary({ marcus }: { marcus: MarcusState | null }) {
             No pending actions yet. Send Marcus a message to create one.
           </div>
         ) : (
-          actions.map((action) => (
+          actions.map((action: ActionItem) => (
             <article key={action.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
