@@ -8,6 +8,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(BuzzerUpdaterPlugin.class);
         registerPlugin(BuzzerDeviceSettingsPlugin.class);
+        registerPlugin(BuzzerWidgetDataPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

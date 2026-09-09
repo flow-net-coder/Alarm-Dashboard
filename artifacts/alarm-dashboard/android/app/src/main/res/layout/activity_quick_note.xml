@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#FFF8ED"
+    android:orientation="vertical"
+    android:padding="20dp">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Add note"
+        android:textColor="#111827"
+        android:textSize="24sp"
+        android:textStyle="bold" />
+
+    <EditText
+        android:id="@+id/quick_note_input"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="14dp"
+        android:layout_weight="1"
+        android:background="@drawable/quick_marcus_field"
+        android:gravity="top"
+        android:hint="Write a note"
+        android:imeOptions="actionDone"
+        android:inputType="textCapSentences|textMultiLine"
+        android:textColor="#111827"
+        android:textColorHint="#6B7280"
+        android:textSize="16sp" />
+
+    <Button
+        android:id="@+id/quick_note_save"
+        android:layout_width="match_parent"
+        android:layout_height="52dp"
+        android:layout_marginTop="12dp"
+        android:backgroundTint="#1F2937"
+        android:text="Save note"
+        android:textColor="#FFFFFF"
+        android:textStyle="bold" />
+</LinearLayout>

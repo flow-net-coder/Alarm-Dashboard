@@ -13,11 +13,17 @@ import { findWebsiteShortcut, parseOpenWebsiteCommand } from '@/lib/websites';
 import { openExternalUrl } from '@/lib/open-url';
 import { parseAlarmCommand } from '@/lib/alarm-commands';
 import type { Alarm } from '@/App';
+import { parseNoteCommand, parseReminderCommand, parseTimedWebsiteCommand } from '@/lib/marcus-commands';
+import type { NoteItem } from '@/lib/notes';
 
 interface Props {
   marcus: MarcusState | null;
   onMarcusUpdate: () => void;
   onCreateAlarm?: (alarm: Alarm) => void;
+  onCreateNote?: (note: NoteItem) => void;
+  onScheduleReminder?: (reminder: { title: string; body: string; at: Date; timeLabel: string }) => Promise<boolean>;
+  onScheduleWebsiteOpen?: (command: { query: string; site: ReturnType<typeof findWebsiteShortcut>; at: Date; timeLabel: string }) => Promise<boolean>;
+  onMarcusReply?: (reply: string) => void;
 }
 
 const TYPE_ICON: Record<string, string> = {
@@ -36,7 +42,7 @@ const STATUS_COLOR: Record<string, string> = {
   cancelled: 'bg-gray-100 text-gray-500',
 };
 
-export default function ChatScreen({ marcus, onMarcusUpdate, onCreateAlarm }: Props) {
+export default function ChatScreen({ marcus, onMarcusUpdate, onCreateAlarm, onCreateNote, onScheduleReminder, onScheduleWebsiteOpen, onMarcusReply }: Props) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [actions, setActions] = useState<ActionItem[]>([]);
   const [input, setInput] = useState('');
@@ -82,6 +88,82 @@ export default function ChatScreen({ marcus, onMarcusUpdate, onCreateAlarm }: Pr
     setInput('');
     setError(null);
 
+    const timedWebsite = parseTimedWebsiteCommand(text);
+    if (timedWebsite && onScheduleWebsiteOpen) {
+      const now = new Date().toISOString();
+      const tempUserMsg: Message = {
+        id: `temp-${Date.now()}`,
+        role: 'user',
+        content: text,
+        sessionDate: now.split('T')[0]!,
+        createdAt: now,
+      };
+      const scheduled = timedWebsite.site ? await onScheduleWebsiteOpen(timedWebsite) : false;
+      const assistantMsg: Message = {
+        id: `temp-ai-${Date.now()}`,
+        role: 'assistant',
+        content: timedWebsite.site
+          ? scheduled
+            ? `Done. I will remind you to open ${timedWebsite.site.title} at ${timedWebsite.timeLabel}.`
+            : 'I need native notification permissions before I can schedule that.'
+          : `I couldn't find "${timedWebsite.query}" in your website shortcuts.`,
+        sessionDate: now.split('T')[0]!,
+        createdAt: new Date().toISOString(),
+      };
+      onMarcusReply?.(assistantMsg.content);
+      setMessages((prev) => [...prev, tempUserMsg, assistantMsg]);
+      inputRef.current?.focus();
+      return;
+    }
+
+    const reminder = parseReminderCommand(text);
+    if (reminder && onScheduleReminder) {
+      const now = new Date().toISOString();
+      const tempUserMsg: Message = {
+        id: `temp-${Date.now()}`,
+        role: 'user',
+        content: text,
+        sessionDate: now.split('T')[0]!,
+        createdAt: now,
+      };
+      const scheduled = await onScheduleReminder(reminder);
+      const assistantMsg: Message = {
+        id: `temp-ai-${Date.now()}`,
+        role: 'assistant',
+        content: scheduled ? `Done. I will notify you at ${reminder.timeLabel}: ${reminder.body}.` : 'I need native notification permissions before I can schedule that.',
+        sessionDate: now.split('T')[0]!,
+        createdAt: new Date().toISOString(),
+      };
+      onMarcusReply?.(assistantMsg.content);
+      setMessages((prev) => [...prev, tempUserMsg, assistantMsg]);
+      inputRef.current?.focus();
+      return;
+    }
+
+    const note = parseNoteCommand(text);
+    if (note && onCreateNote) {
+      const now = new Date().toISOString();
+      const tempUserMsg: Message = {
+        id: `temp-${Date.now()}`,
+        role: 'user',
+        content: text,
+        sessionDate: now.split('T')[0]!,
+        createdAt: now,
+      };
+      const assistantMsg: Message = {
+        id: `temp-ai-${Date.now()}`,
+        role: 'assistant',
+        content: `Saved note: ${note.content}`,
+        sessionDate: now.split('T')[0]!,
+        createdAt: new Date().toISOString(),
+      };
+      onMarcusReply?.(assistantMsg.content);
+      onCreateNote(note);
+      setMessages((prev) => [...prev, tempUserMsg, assistantMsg]);
+      inputRef.current?.focus();
+      return;
+    }
+
     const websiteQuery = parseOpenWebsiteCommand(text);
     if (websiteQuery) {
       const now = new Date().toISOString();
@@ -104,6 +186,7 @@ export default function ChatScreen({ marcus, onMarcusUpdate, onCreateAlarm }: Pr
       };
 
       setMessages((prev) => [...prev, tempUserMsg, assistantMsg]);
+      onMarcusReply?.(assistantMsg.content);
       if (site) {
         void openExternalUrl(site.url);
       }
@@ -130,6 +213,7 @@ export default function ChatScreen({ marcus, onMarcusUpdate, onCreateAlarm }: Pr
       };
 
       onCreateAlarm(alarm);
+      onMarcusReply?.(assistantMsg.content);
       setMessages((prev) => [...prev, tempUserMsg, assistantMsg]);
       inputRef.current?.focus();
       return;
@@ -157,6 +241,7 @@ export default function ChatScreen({ marcus, onMarcusUpdate, onCreateAlarm }: Pr
         createdAt: new Date().toISOString(),
       };
       setMessages((prev) => [...prev.filter((m) => m.id !== tempUserMsg.id), tempUserMsg, tempAssistantMsg]);
+      onMarcusReply?.(reply);
 
       // Refresh actions after a short delay (extraction runs in background)
       setTimeout(() => {

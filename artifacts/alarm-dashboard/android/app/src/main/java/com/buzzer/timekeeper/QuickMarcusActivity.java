@@ -35,8 +35,7 @@ public class QuickMarcusActivity extends Activity {
         reply = findViewById(R.id.quick_marcus_reply);
         send = findViewById(R.id.quick_marcus_send);
 
-        String lastReply = getSharedPreferences(MarcusWidgetProvider.PREFS_NAME, Context.MODE_PRIVATE)
-            .getString(MarcusWidgetProvider.KEY_LAST_REPLY, "Latest reply will show here.");
+        String lastReply = WidgetDataStore.getString(this, WidgetDataStore.KEY_MARCUS_REPLY, "Latest reply will show here.");
         reply.setText(lastReply);
 
         send.setOnClickListener(view -> sendMessage());

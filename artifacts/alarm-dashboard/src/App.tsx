@@ -16,6 +16,7 @@ import {
   requestNativeAlarmPermissions,
   registerNativeAlarmActions,
   scheduleNativeAlarm,
+  scheduleNativeReminder,
   sendNativeTestNotification,
   syncNativeAlarms,
   type NativeAlarmHealth,
@@ -32,7 +33,10 @@ import { findWebsiteShortcut, parseOpenWebsiteCommand } from '@/lib/websites';
 import { openExternalUrl } from '@/lib/open-url';
 import { checkForAppUpdate, installAppUpdate, type AppUpdateInfo } from '@/lib/app-updater';
 import { parseAlarmCommand } from '@/lib/alarm-commands';
+import { parseNoteCommand, parseReminderCommand, parseTimedWebsiteCommand } from '@/lib/marcus-commands';
+import { loadNotes, saveNotes, type NoteItem } from '@/lib/notes';
 import { getBatteryOptimizationIgnored, openAppNotificationSettings, openBatteryOptimizationSettings } from '@/lib/device-settings';
+import { clearAndroidQuickNotes, getAndroidQuickNotes, updateAndroidWidgets } from '@/lib/widget-data';
 import { getHistory, sendMessage, sendTestPush, type Message } from '@/api';
 
 import {
@@ -51,6 +55,7 @@ import {
   Menu,
   MessageCircle,
   Moon,
+  NotebookPen,
   Plus,
   Search,
   Send,
@@ -86,7 +91,7 @@ export type Alarm = {
 };
 
 type Filter = 'all' | 'active' | 'paused';
-type NavTab = 'alarms' | 'marcus' | 'websites';
+type NavTab = 'alarms' | 'marcus' | 'websites' | 'notes';
 type ServerPushStatus = 'unknown' | 'ready' | 'unsupported' | 'server_not_configured' | 'permission_not_granted' | 'sync_error';
 type NativeAlarmStatus = 'browser' | 'unknown' | 'ready' | 'permission_not_granted' | 'sync_error';
 type UpdateStatus = 'idle' | 'checking' | 'available' | 'current' | 'installing' | 'error';
@@ -277,6 +282,19 @@ function Sidebar({ activeTab, onTabChange }: { activeTab: NavTab; onTabChange: (
           >
             <Globe size={16} className={activeTab === 'websites' ? 'text-[hsl(var(--sidebar-primary))]' : ''} />
             Websites & Apps
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onTabChange('notes')}
+            className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-bold transition-all ${
+              activeTab === 'notes'
+                ? 'bg-[hsl(var(--sidebar-accent))] text-[hsl(var(--sidebar-foreground))] shadow-sm'
+                : 'text-[hsl(var(--sidebar-foreground)/.65)] hover:bg-[hsl(var(--sidebar-accent)/.5)]'
+            }`}
+          >
+            <NotebookPen size={16} className={activeTab === 'notes' ? 'text-[hsl(var(--sidebar-primary))]' : ''} />
+            Notes
           </button>
         </div>
       </div>
@@ -608,7 +626,21 @@ function AlarmModal({
   );
 }
 
-function HomeChatWidget({ onOpenChat, onCreateAlarm }: { onOpenChat: () => void; onCreateAlarm: (alarm: Alarm) => void }) {
+function HomeChatWidget({
+  onOpenChat,
+  onCreateAlarm,
+  onCreateNote,
+  onScheduleReminder,
+  onScheduleWebsiteOpen,
+  onMarcusReply,
+}: {
+  onOpenChat: () => void;
+  onCreateAlarm: (alarm: Alarm) => void;
+  onCreateNote: (note: NoteItem) => void;
+  onScheduleReminder: (reminder: { title: string; body: string; at: Date; timeLabel: string }) => Promise<boolean>;
+  onScheduleWebsiteOpen: (command: { query: string; site: ReturnType<typeof findWebsiteShortcut>; at: Date; timeLabel: string }) => Promise<boolean>;
+  onMarcusReply: (reply: string) => void;
+}) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
@@ -651,6 +683,58 @@ function HomeChatWidget({ onOpenChat, onCreateAlarm }: { onOpenChat: () => void;
     setSending(true);
     setMessages((current) => [...current.slice(-3), optimistic]);
 
+    const timedWebsite = parseTimedWebsiteCommand(text);
+    if (timedWebsite) {
+      const scheduled = timedWebsite.site ? await onScheduleWebsiteOpen(timedWebsite) : false;
+      const assistantMessage: Message = {
+        id: `home-chat-reply-${Date.now()}`,
+        role: 'assistant',
+        content: timedWebsite.site
+          ? scheduled
+            ? `Done. I will remind you to open ${timedWebsite.site.title} at ${timedWebsite.timeLabel}.`
+            : 'I need native notification permissions before I can schedule that.'
+          : `I couldn't find "${timedWebsite.query}" in your website shortcuts.`,
+        sessionDate: now.split('T')[0]!,
+        createdAt: new Date().toISOString(),
+      };
+      onMarcusReply(assistantMessage.content);
+      setMessages((current) => [...current.slice(-3), assistantMessage]);
+      setSending(false);
+      return;
+    }
+
+    const reminder = parseReminderCommand(text);
+    if (reminder) {
+      const scheduled = await onScheduleReminder(reminder);
+      const assistantMessage: Message = {
+        id: `home-chat-reply-${Date.now()}`,
+        role: 'assistant',
+        content: scheduled ? `Done. I will notify you at ${reminder.timeLabel}: ${reminder.body}.` : 'I need native notification permissions before I can schedule that.',
+        sessionDate: now.split('T')[0]!,
+        createdAt: new Date().toISOString(),
+      };
+      onMarcusReply(assistantMessage.content);
+      setMessages((current) => [...current.slice(-3), assistantMessage]);
+      setSending(false);
+      return;
+    }
+
+    const note = parseNoteCommand(text);
+    if (note) {
+      const assistantMessage: Message = {
+        id: `home-chat-reply-${Date.now()}`,
+        role: 'assistant',
+        content: `Saved note: ${note.content}`,
+        sessionDate: now.split('T')[0]!,
+        createdAt: new Date().toISOString(),
+      };
+      onCreateNote(note);
+      onMarcusReply(assistantMessage.content);
+      setMessages((current) => [...current.slice(-3), assistantMessage]);
+      setSending(false);
+      return;
+    }
+
     const websiteQuery = parseOpenWebsiteCommand(text);
     if (websiteQuery) {
       const site = findWebsiteShortcut(websiteQuery);
@@ -664,6 +748,7 @@ function HomeChatWidget({ onOpenChat, onCreateAlarm }: { onOpenChat: () => void;
         createdAt: new Date().toISOString(),
       };
 
+      onMarcusReply(assistantMessage.content);
       setMessages((current) => [...current.slice(-3), assistantMessage]);
       setSending(false);
       if (site) {
@@ -683,6 +768,7 @@ function HomeChatWidget({ onOpenChat, onCreateAlarm }: { onOpenChat: () => void;
       };
 
       onCreateAlarm(alarm);
+      onMarcusReply(assistantMessage.content);
       setMessages((current) => [...current.slice(-3), assistantMessage]);
       setSending(false);
       return;
@@ -697,6 +783,7 @@ function HomeChatWidget({ onOpenChat, onCreateAlarm }: { onOpenChat: () => void;
         sessionDate: now.split('T')[0]!,
         createdAt: new Date().toISOString(),
       };
+      onMarcusReply(reply);
       setMessages((current) => [...current.slice(-3), assistantMessage]);
     } catch (err) {
       setError((err as Error).message ?? 'Could not send message');
@@ -863,6 +950,84 @@ function ReliabilityPanel({
   );
 }
 
+function NotesView({
+  notes,
+  onAdd,
+  onDelete,
+  onTogglePinned,
+}: {
+  notes: NoteItem[];
+  onAdd: (content: string) => void;
+  onDelete: (id: string) => void;
+  onTogglePinned: (id: string) => void;
+}) {
+  const [draft, setDraft] = useState('');
+  const sortedNotes = [...notes].sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.createdAt.localeCompare(a.createdAt));
+
+  const submit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const content = draft.trim();
+    if (!content) return;
+    onAdd(content);
+    setDraft('');
+  };
+
+  return (
+    <section className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
+      <form onSubmit={submit} className="rounded-[15px] border border-[hsl(var(--border))] bg-[hsl(var(--card)/.78)] p-5">
+        <div className="mono-label text-[hsl(var(--accent))]">Notes</div>
+        <h2 className="mt-1 text-xl font-extrabold text-[hsl(var(--foreground))]">Quick capture</h2>
+        <textarea
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          placeholder="Write a note"
+          className="soft-input mt-4 min-h-32 resize-none p-3"
+          data-testid="textarea-new-note"
+        />
+        <button type="submit" className="primary-button mt-3 min-h-11 px-4" data-testid="button-save-note">
+          <NotebookPen size={16} /> Save note
+        </button>
+      </form>
+
+      <div className="rounded-[15px] border border-[hsl(var(--border))] bg-[hsl(var(--card)/.62)] p-4">
+        <div className="flex items-center justify-between gap-3 border-b border-[hsl(var(--border)/.7)] pb-3">
+          <div>
+            <div className="mono-label text-[hsl(var(--accent))]">Saved</div>
+            <h2 className="mt-1 text-lg font-extrabold text-[hsl(var(--foreground))]">{notes.length} note{notes.length === 1 ? '' : 's'}</h2>
+          </div>
+        </div>
+
+        <div className="mt-3 space-y-2">
+          {sortedNotes.length > 0 ? (
+            sortedNotes.map((note) => (
+              <article key={note.id} className="rounded-xl border border-[hsl(var(--border)/.7)] bg-white/75 p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <p className="min-w-0 whitespace-pre-wrap text-sm leading-6 text-[hsl(var(--foreground))]">{note.content}</p>
+                  <div className="flex shrink-0 gap-1">
+                    <button type="button" onClick={() => onTogglePinned(note.id)} className="quiet-button h-8 px-2 text-xs">
+                      {note.pinned ? 'Pinned' : 'Pin'}
+                    </button>
+                    <button type="button" onClick={() => onDelete(note.id)} className="quiet-button h-8 w-8" aria-label="Delete note">
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </div>
+                <div className="mt-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-[hsl(var(--muted-foreground))]">
+                  {new Date(note.createdAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                </div>
+              </article>
+            ))
+          ) : (
+            <div className="rounded-xl border border-dashed border-[hsl(var(--border))] bg-white/45 p-8 text-center text-sm font-semibold text-[hsl(var(--muted-foreground))]">
+              No notes yet.
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function Home() {
   const [alarms, setAlarms] = useState<Alarm[]>(() => {
     try {
@@ -872,6 +1037,8 @@ function Home() {
       return initialAlarms;
     }
   });
+  const [notes, setNotes] = useState<NoteItem[]>(() => loadNotes());
+  const [lastMarcusReply, setLastMarcusReply] = useState('Ask Marcus from the widget.');
 
   const [activeTab, setActiveTab] = useState<NavTab>('alarms');
   const [query, setQuery] = useState('');
@@ -931,6 +1098,31 @@ function Home() {
       .catch(() => setNativeAlarmStatus('sync_error'));
   }, [alarms, nativeApp]);
 
+  useEffect(() => {
+    saveNotes(notes);
+  }, [notes]);
+
+  useEffect(() => {
+    void updateAndroidWidgets(alarms, notes, lastMarcusReply);
+  }, [alarms, notes, lastMarcusReply]);
+
+  const mergeAndroidQuickNotes = () => {
+    if (!nativeApp) return;
+    void getAndroidQuickNotes().then((quickNotes) => {
+      if (quickNotes.length === 0) return;
+      setNotes((current) => {
+        const existingIds = new Set(current.map((note) => note.id));
+        const incoming = quickNotes.filter((note) => !existingIds.has(note.id));
+        return incoming.length > 0 ? [...incoming, ...current] : current;
+      });
+      void clearAndroidQuickNotes();
+    });
+  };
+
+  useEffect(() => {
+    mergeAndroidQuickNotes();
+  }, [nativeApp]);
+
   const refreshNativeReadiness = () => {
     if (!nativeApp) return;
     void getNativeAlarmHealth()
@@ -955,6 +1147,7 @@ function Home() {
     CapacitorApp.addListener('appStateChange', ({ isActive }) => {
       if (!cancelled && isActive) {
         refreshNativeReadiness();
+        mergeAndroidQuickNotes();
       }
     })
       .then((handle) => {
@@ -974,6 +1167,10 @@ function Home() {
     const applyLaunchTarget = (url: string) => {
       if (url.includes('tab=marcus') || url.includes('buzzer://chat')) {
         setActiveTab('marcus');
+      } else if (url.includes('tab=notes') || url.includes('buzzer://notes')) {
+        setActiveTab('notes');
+      } else if (url.includes('tab=alarms') || url.includes('buzzer://alarms')) {
+        setActiveTab('alarms');
       }
     };
 
@@ -1128,10 +1325,14 @@ function Home() {
     let cleanup: (() => void) | undefined;
     let cancelled = false;
 
-    void listenForNativeAlarmActions((action, alarmId) => {
+    void listenForNativeAlarmActions(({ action, alarmId, url }) => {
       const alarm = alarmId ? alarms.find((item) => item.id === alarmId) : ringingAlarm;
       if (action === 'dismiss') {
         setRingingAlarm(null);
+        return;
+      }
+      if (action === 'open' && url) {
+        void openExternalUrl(url);
         return;
       }
       if (action === 'snooze' && alarm) {
@@ -1243,6 +1444,49 @@ function Home() {
     }
   };
 
+  const addNote = (content: string) => {
+    setNotes((current) => [
+      {
+        id: `note-${Date.now()}`,
+        content,
+        createdAt: new Date().toISOString(),
+        pinned: false,
+      },
+      ...current,
+    ]);
+  };
+
+  const createNoteFromMarcus = (note: NoteItem) => {
+    setNotes((current) => [note, ...current]);
+    setLastMarcusReply(`Saved note: ${note.content}`);
+  };
+
+  const deleteNote = (id: string) => {
+    setNotes((current) => current.filter((note) => note.id !== id));
+  };
+
+  const togglePinnedNote = (id: string) => {
+    setNotes((current) => current.map((note) => (note.id === id ? { ...note, pinned: !note.pinned } : note)));
+  };
+
+  const scheduleMarcusReminder = async (reminder: { title: string; body: string; at: Date; timeLabel: string }) => {
+    const scheduled = await scheduleNativeReminder({ title: reminder.title, body: reminder.body, at: reminder.at }).catch(() => false);
+    if (scheduled) setLastMarcusReply(`Reminder set for ${reminder.timeLabel}: ${reminder.body}`);
+    return scheduled;
+  };
+
+  const scheduleMarcusWebsiteOpen = async (command: { query: string; site: ReturnType<typeof findWebsiteShortcut>; at: Date; timeLabel: string }) => {
+    if (!command.site) return false;
+    const scheduled = await scheduleNativeReminder({
+      title: `Open ${command.site.title}`,
+      body: `Marcus reminder for ${command.timeLabel}`,
+      at: command.at,
+      url: command.site.url,
+    }).catch(() => false);
+    if (scheduled) setLastMarcusReply(`I will remind you to open ${command.site.title} at ${command.timeLabel}.`);
+    return scheduled;
+  };
+
   const deleteAlarm = (alarm: Alarm) => {
     if (window.confirm(`Remove “${alarm.label || 'Untitled ritual'}”?`)) {
       void cancelNativeAlarm(alarm).catch(() => setNativeAlarmStatus('sync_error'));
@@ -1314,6 +1558,8 @@ function Home() {
                 </>
               ) : activeTab === 'marcus' ? (
                 'Marcus AI Assistant'
+              ) : activeTab === 'notes' ? (
+                'Notes'
               ) : (
                 'Websites & Apps'
               )}
@@ -1323,6 +1569,8 @@ function Home() {
                 ? 'Your reminders & dings, tuned to the shape of your day.'
                 : activeTab === 'marcus'
                 ? 'Marcus takes your notes and organizes your reminders & action items.'
+                : activeTab === 'notes'
+                ? 'Capture notes from the app, Marcus, and your home-screen widget.'
                 : 'Desktop & mobile shortcuts for your favorite web apps.'}
             </p>
           </div>
@@ -1357,6 +1605,15 @@ function Home() {
                 }`}
               >
                 🌐 Websites
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('notes')}
+                className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${
+                  activeTab === 'notes' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                Notes
               </button>
             </div>
 
@@ -1408,6 +1665,18 @@ function Home() {
                   >
                     <Globe size={16} /> Websites & Web Apps
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveTab('notes');
+                      setMenuOpen(false);
+                    }}
+                    className={`flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm font-bold ${
+                      activeTab === 'notes' ? 'bg-blue-50 text-blue-600' : 'hover:bg-slate-100'
+                    }`}
+                  >
+                    <NotebookPen size={16} /> Notes
+                  </button>
 
                   <div className="my-1.5 border-t border-slate-100" />
 
@@ -1428,8 +1697,18 @@ function Home() {
         {/* Tab Content Views */}
         {activeTab === 'marcus' && (
           <div className="mt-6 h-[80vh] rounded-3xl border border-slate-200 bg-white overflow-hidden shadow-sm">
-            <AiChatBox onCreateAlarm={createAlarmFromMarcus} />
+            <AiChatBox
+              onCreateAlarm={createAlarmFromMarcus}
+              onCreateNote={createNoteFromMarcus}
+              onScheduleReminder={scheduleMarcusReminder}
+              onScheduleWebsiteOpen={scheduleMarcusWebsiteOpen}
+              onMarcusReply={setLastMarcusReply}
+            />
           </div>
+        )}
+
+        {activeTab === 'notes' && (
+          <NotesView notes={notes} onAdd={addNote} onDelete={deleteNote} onTogglePinned={togglePinnedNote} />
         )}
 
         {activeTab === 'websites' && (
@@ -1593,7 +1872,14 @@ function Home() {
                     </a>
                   )}
                 </div>
-                <HomeChatWidget onOpenChat={() => setActiveTab('marcus')} onCreateAlarm={createAlarmFromMarcus} />
+                <HomeChatWidget
+                  onOpenChat={() => setActiveTab('marcus')}
+                  onCreateAlarm={createAlarmFromMarcus}
+                  onCreateNote={createNoteFromMarcus}
+                  onScheduleReminder={scheduleMarcusReminder}
+                  onScheduleWebsiteOpen={scheduleMarcusWebsiteOpen}
+                  onMarcusReply={setLastMarcusReply}
+                />
               </div>
             </section>
 

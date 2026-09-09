@@ -2,10 +2,24 @@ import { useEffect, useState } from 'react';
 import ChatScreen from './ChatScreen';
 import { getActions, getMarcusState, updateAction, type MarcusState, type ActionItem } from '../api';
 import type { Alarm } from '@/App';
+import type { NoteItem } from '@/lib/notes';
+import type { WebsiteShortcut } from '@/lib/websites';
 
 type TabKey = 'chat' | 'actions' | 'context';
 
-export function AiChatBox({ onCreateAlarm }: { onCreateAlarm?: (alarm: Alarm) => void }) {
+export function AiChatBox({
+  onCreateAlarm,
+  onCreateNote,
+  onScheduleReminder,
+  onScheduleWebsiteOpen,
+  onMarcusReply,
+}: {
+  onCreateAlarm?: (alarm: Alarm) => void;
+  onCreateNote?: (note: NoteItem) => void;
+  onScheduleReminder?: (reminder: { title: string; body: string; at: Date; timeLabel: string }) => Promise<boolean>;
+  onScheduleWebsiteOpen?: (command: { query: string; site: WebsiteShortcut | null; at: Date; timeLabel: string }) => Promise<boolean>;
+  onMarcusReply?: (reply: string) => void;
+}) {
   const [marcus, setMarcus] = useState<MarcusState | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>('chat');
   const [pendingActions, setPendingActions] = useState(0);
@@ -76,7 +90,17 @@ export function AiChatBox({ onCreateAlarm }: { onCreateAlarm?: (alarm: Alarm) =>
       </header>
 
       <main className="flex-1 min-h-0">
-        {activeTab === 'chat' && <ChatScreen marcus={marcus} onMarcusUpdate={refreshMarcus} onCreateAlarm={onCreateAlarm} />}
+        {activeTab === 'chat' && (
+          <ChatScreen
+            marcus={marcus}
+            onMarcusUpdate={refreshMarcus}
+            onCreateAlarm={onCreateAlarm}
+            onCreateNote={onCreateNote}
+            onScheduleReminder={onScheduleReminder}
+            onScheduleWebsiteOpen={onScheduleWebsiteOpen}
+            onMarcusReply={onMarcusReply}
+          />
+        )}
 
         {activeTab === 'actions' && (
           <section className="h-full overflow-y-auto px-4 py-5 sm:px-6 lg:px-8">

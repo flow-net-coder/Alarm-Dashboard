@@ -5,8 +5,10 @@ import type { Alarm } from '@/App';
 const ALARM_CHANNEL_ID = 'buzzer_alarm_v2';
 const ALARM_SOUND = 'buzzer_alarm.wav';
 const ALARM_ACTION_TYPE = 'buzzer_alarm_actions';
+const WEBSITE_ACTION_TYPE = 'buzzer_website_actions';
 const SNOOZE_ACTION_ID = 'snooze';
 const DISMISS_ACTION_ID = 'dismiss';
+const OPEN_ACTION_ID = 'open';
 
 const dayToDateDay: Record<string, number> = {
   su: 0,
@@ -104,16 +106,28 @@ export async function registerNativeAlarmActions() {
           { id: DISMISS_ACTION_ID, title: 'Dismiss', foreground: true },
         ],
       },
+      {
+        id: WEBSITE_ACTION_TYPE,
+        actions: [{ id: OPEN_ACTION_ID, title: 'Open', foreground: true }],
+      },
     ],
   }).catch(() => undefined);
 }
 
-export async function listenForNativeAlarmActions(onAction: (action: 'snooze' | 'dismiss', alarmId?: string) => void) {
+export async function listenForNativeAlarmActions(
+  onAction: (event: { action: 'snooze' | 'dismiss' | 'open'; alarmId?: string; url?: string }) => void,
+) {
   if (!isNativeApp()) return undefined;
   const handle = await LocalNotifications.addListener('localNotificationActionPerformed', (event: ActionPerformed) => {
-    if (event.actionId !== SNOOZE_ACTION_ID && event.actionId !== DISMISS_ACTION_ID) return;
     const alarmId = typeof event.notification.extra?.alarmId === 'string' ? event.notification.extra.alarmId : undefined;
-    onAction(event.actionId, alarmId);
+    const url = typeof event.notification.extra?.url === 'string' ? event.notification.extra.url : undefined;
+    if (event.actionId === SNOOZE_ACTION_ID || event.actionId === DISMISS_ACTION_ID) {
+      onAction({ action: event.actionId, alarmId });
+      return;
+    }
+    if (event.actionId === OPEN_ACTION_ID || (event.notification.extra?.kind === 'open_website' && url)) {
+      onAction({ action: 'open', url });
+    }
   });
   return () => {
     void handle.remove();
@@ -207,6 +221,35 @@ export async function sendNativeTestNotification() {
         foreground: true,
         iconColor: '#E69C73',
         extra: { kind: 'native-test' },
+      },
+    ],
+  });
+
+  return true;
+}
+
+export async function scheduleNativeReminder(options: { title: string; body: string; at: Date; url?: string }) {
+  if (!isNativeApp()) return false;
+
+  const granted = await requestNativeAlarmPermissions();
+  if (!granted) return false;
+
+  await LocalNotifications.schedule({
+    notifications: [
+      {
+        id: Date.now() % 2147483647,
+        title: options.title,
+        body: options.body,
+        schedule: { at: options.at, allowWhileIdle: true },
+        channelId: ALARM_CHANNEL_ID,
+        sound: ALARM_SOUND,
+        actionTypeId: options.url ? WEBSITE_ACTION_TYPE : ALARM_ACTION_TYPE,
+        foreground: true,
+        iconColor: '#E69C73',
+        extra: {
+          kind: options.url ? 'open_website' : 'marcus_reminder',
+          url: options.url,
+        },
       },
     ],
   });

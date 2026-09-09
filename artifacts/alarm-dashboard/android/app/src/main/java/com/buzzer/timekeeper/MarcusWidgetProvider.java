@@ -10,9 +10,6 @@ import android.net.Uri;
 import android.widget.RemoteViews;
 
 public class MarcusWidgetProvider extends AppWidgetProvider {
-    static final String PREFS_NAME = "marcus_widget";
-    static final String KEY_LAST_REPLY = "last_reply";
-
     @Override
     public void onUpdate(Context context, AppWidgetManager appWidgetManager, int[] appWidgetIds) {
         for (int appWidgetId : appWidgetIds) {
@@ -30,10 +27,7 @@ public class MarcusWidgetProvider extends AppWidgetProvider {
     }
 
     static void saveLastReply(Context context, String reply) {
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .edit()
-            .putString(KEY_LAST_REPLY, reply)
-            .apply();
+        WidgetDataStore.putString(context, WidgetDataStore.KEY_MARCUS_REPLY, reply);
         updateAll(context);
     }
 
@@ -59,8 +53,7 @@ public class MarcusWidgetProvider extends AppWidgetProvider {
             PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
         );
 
-        String reply = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getString(KEY_LAST_REPLY, "Tap below to ask Marcus.");
+        String reply = WidgetDataStore.getString(context, WidgetDataStore.KEY_MARCUS_REPLY, "Tap below to ask Marcus.");
 
         RemoteViews views = new RemoteViews(context.getPackageName(), R.layout.marcus_widget);
         views.setTextViewText(R.id.marcus_widget_reply, reply);

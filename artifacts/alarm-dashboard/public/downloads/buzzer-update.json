@@ -1,6 +1,6 @@
 {
-  "versionCode": 8,
-  "versionName": "1.7",
+  "versionCode": 9,
+  "versionName": "1.8",
   "apkUrl": "/downloads/buzzer-debug.apk",
-  "notes": "Adds an alarm reliability checklist, Android battery/settings helpers, and snooze/dismiss actions for native alarm notifications."
+  "notes": "Adds today alarms and notes widgets, a Notes section, Marcus note/reminder commands, and timed website-open notifications."
 }

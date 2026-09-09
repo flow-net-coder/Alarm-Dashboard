@@ -3,6 +3,8 @@
     <string name="app_name">Buzzer</string>
     <string name="title_activity_main">Buzzer</string>
     <string name="marcus_widget_description">Ask Marcus and see his latest reply from your home screen.</string>
+    <string name="today_alarms_widget_description">Show today alarms on your home screen.</string>
+    <string name="notes_widget_description">Show and add Buzzer notes from your home screen.</string>
     <string name="package_name">com.buzzer.timekeeper</string>
     <string name="custom_url_scheme">com.buzzer.timekeeper</string>
 </resources>

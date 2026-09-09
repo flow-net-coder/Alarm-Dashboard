@@ -27,6 +27,8 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="buzzer" android:host="chat" />
+                <data android:scheme="buzzer" android:host="alarms" />
+                <data android:scheme="buzzer" android:host="notes" />
             </intent-filter>
 
         </activity>
@@ -34,6 +36,12 @@
         <activity
             android:name=".QuickMarcusActivity"
             android:label="Ask Marcus"
+            android:theme="@style/AppTheme.NoActionBar"
+            android:exported="false" />
+
+        <activity
+            android:name=".QuickNoteActivity"
+            android:label="Add Note"
             android:theme="@style/AppTheme.NoActionBar"
             android:exported="false" />
 
@@ -46,6 +54,28 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/marcus_widget_info" />
+        </receiver>
+
+        <receiver
+            android:name=".TodayAlarmsWidgetProvider"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/today_alarms_widget_info" />
+        </receiver>
+
+        <receiver
+            android:name=".NotesWidgetProvider"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/notes_widget_info" />
         </receiver>
 
         <provider
