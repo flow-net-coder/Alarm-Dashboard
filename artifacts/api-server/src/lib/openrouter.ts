@@ -19,7 +19,7 @@ export interface ExtractionResult {
 }
 
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY ?? '';
-const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL ?? 'minimax/minimax-m3';
+const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL ?? 'nex-agi/nex-n2.5-pro:free';
 const OPENROUTER_HTTP_REFERER = process.env.OPENROUTER_HTTP_REFERER ?? 'http://localhost:5173';
 const OPENROUTER_APP_TITLE = process.env.OPENROUTER_APP_TITLE ?? 'AI Marcus';
 const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
