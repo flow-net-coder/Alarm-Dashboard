@@ -17,6 +17,7 @@ import {
   registerNativeAlarmActions,
   scheduleNativeAlarm,
   scheduleNativeReminder,
+  sendNativeMarcusNotification,
   sendNativeTestNotification,
   syncNativeAlarms,
   type NativeAlarmHealth,
@@ -34,6 +35,7 @@ import { openExternalUrl } from '@/lib/open-url';
 import { checkForAppUpdate, installAppUpdate, type AppUpdateInfo } from '@/lib/app-updater';
 import { parseAlarmCommand } from '@/lib/alarm-commands';
 import { parseNoteCommand, parseReminderCommand, parseTimedWebsiteCommand } from '@/lib/marcus-commands';
+import { buildAssistantContext, isLocationContextEnabled } from '@/lib/location';
 import { loadNotes, saveNotes, type NoteItem } from '@/lib/notes';
 import { getBatteryOptimizationIgnored, openAppNotificationSettings, openBatteryOptimizationSettings } from '@/lib/device-settings';
 import { clearAndroidQuickNotes, getAndroidQuickNotes, updateAndroidWidgets } from '@/lib/widget-data';
@@ -775,7 +777,7 @@ function HomeChatWidget({
     }
 
     try {
-      const { reply } = await sendMessage(text);
+      const { reply } = await sendMessage(text, await buildAssistantContext(isLocationContextEnabled()));
       const assistantMessage: Message = {
         id: `home-chat-reply-${Date.now()}`,
         role: 'assistant',
@@ -1325,10 +1327,22 @@ function Home() {
     let cleanup: (() => void) | undefined;
     let cancelled = false;
 
-    void listenForNativeAlarmActions(({ action, alarmId, url }) => {
+    void listenForNativeAlarmActions(({ action, alarmId, url, reply }) => {
       const alarm = alarmId ? alarms.find((item) => item.id === alarmId) : ringingAlarm;
       if (action === 'dismiss') {
         setRingingAlarm(null);
+        return;
+      }
+      if (action === 'reply' && reply) {
+        void buildAssistantContext(false)
+          .then((context) => sendMessage(reply, context))
+          .then(({ reply: marcusReply }) => {
+            setLastMarcusReply(marcusReply);
+            return sendNativeMarcusNotification({ body: marcusReply });
+          })
+          .catch(() => {
+            void sendNativeMarcusNotification({ title: 'Marcus', body: 'I could not send that reply. Open Buzzer and try again.' });
+          });
         return;
       }
       if (action === 'open' && url) {

@@ -4,6 +4,7 @@ import { desc } from 'drizzle-orm';
 import { generateMarcusResponse } from '../lib/openrouter';
 import { buildSystemPrompt, getRecentHistory, saveMessages } from '../lib/memory';
 import { processExchange } from '../lib/extractor';
+import { buildClientContextBlock, searchWebForMarcus, type AssistantClientContext } from '../lib/serper';
 
 const router = Router();
 
@@ -12,7 +13,7 @@ const router = Router();
  * Send a message to the marcus and get a response.
  */
 router.post('/chat', async (req, res): Promise<void> => {
-  const { message } = req.body as { message?: string };
+  const { message, context } = req.body as { message?: string; context?: AssistantClientContext };
 
   if (!message || typeof message !== 'string' || message.trim().length === 0) {
     res.status(400).json({ error: 'message is required' });
@@ -23,19 +24,29 @@ router.post('/chat', async (req, res): Promise<void> => {
 
   try {
     // Build context: system prompt + conversation history
-    const [systemPrompt, history] = await Promise.all([
+    const [systemPrompt, history, webContext] = await Promise.all([
       buildSystemPrompt(),
       getRecentHistory(),
+      searchWebForMarcus(userContent, context).catch((error) => {
+        console.error('[chat] Serper search failed:', error);
+        return '';
+      }),
     ]);
+    const clientContext = buildClientContextBlock(context);
+    const enrichedSystemPrompt = [systemPrompt, clientContext, webContext].filter(Boolean).join('\n\n');
 
     // Add the new user message to history
     const messages = [...history, { role: 'user' as const, content: userContent }];
 
     // Generate marcus response
-    const reply = await generateMarcusResponse(messages, systemPrompt);
+    const reply = await generateMarcusResponse(messages, enrichedSystemPrompt);
 
     // Save both messages to DB
-    const { userId } = await saveMessages(userContent, reply);
+    const { userId } = await saveMessages(
+      userContent,
+      reply,
+      context ? { clientContext: context, webContextUsed: Boolean(webContext) } : undefined,
+    );
 
     // Fire-and-forget: extract action items + context updates in background
     processExchange(userContent, reply, userId).catch((err) =>

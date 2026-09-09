@@ -78,3 +78,36 @@ export function parseTimedWebsiteCommand(text: string) {
     timeLabel: time.label,
   };
 }
+
+function normalizePhone(value: string) {
+  const trimmed = value.trim();
+  const phone = trimmed.match(/\+?[\d\s().-]{7,}/)?.[0]?.replace(/[^\d+]/g, '');
+  return phone && /\d{7,}/.test(phone) ? phone : null;
+}
+
+function keyMatchesContact(key: string, name: string) {
+  const cleanKey = key.toLowerCase().replace(/[_-]/g, ' ');
+  const cleanName = name.toLowerCase().trim();
+  return (
+    cleanKey === `${cleanName} phone` ||
+    cleanKey === `phone ${cleanName}` ||
+    cleanKey === `${cleanName} number` ||
+    cleanKey === `${cleanName} mobile` ||
+    cleanKey.includes(cleanName)
+  );
+}
+
+export function parseCallCommand(text: string, context?: Record<string, string>) {
+  const match = text.match(/^(?:marcus[, ]+)?(?:please\s+)?(?:call|phone|dial)\s+(.+?)\s*$/i);
+  const name = match?.[1]?.replace(/[.?!]+$/, '').trim();
+  if (!name) return null;
+
+  const entries = Object.entries(context ?? {});
+  const found = entries.find(([key, value]) => keyMatchesContact(key, name) && normalizePhone(value));
+  const directPhone = normalizePhone(name);
+
+  return {
+    name,
+    phone: directPhone ?? (found ? normalizePhone(found[1]) : null),
+  };
+}

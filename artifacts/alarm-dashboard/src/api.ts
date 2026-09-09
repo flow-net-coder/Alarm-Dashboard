@@ -66,6 +66,17 @@ export interface PushPublicKeyResponse {
   publicKey: string;
 }
 
+export type AssistantContext = {
+  timezone?: string;
+  locale?: string;
+  location?: {
+    latitude: number;
+    longitude: number;
+    accuracy?: number;
+    timezone?: string;
+  } | null;
+};
+
 async function json<T>(res: Response): Promise<T> {
   const contentType = res.headers.get('content-type') || '';
   if (!res.ok) {
@@ -80,12 +91,12 @@ async function json<T>(res: Response): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-export async function sendMessage(message: string): Promise<{ reply: string; timestamp: string }> {
+export async function sendMessage(message: string, context?: AssistantContext): Promise<{ reply: string; timestamp: string }> {
   return json(
     await fetch(`${getApiBaseUrl()}/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message }),
+      body: JSON.stringify({ message, context }),
     }),
   );
 }

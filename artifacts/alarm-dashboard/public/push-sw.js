@@ -6,6 +6,10 @@ self.addEventListener('push', (event) => {
     icon: '/favicon.svg',
     badge: '/favicon.svg',
     requireInteraction: true,
+    actions: [
+      { action: 'open', title: 'Open Buzzer' },
+      { action: 'marcus', title: 'Ask Marcus' },
+    ],
     data: {
       url: data.url || '/',
       alarm: data.alarm || null,
@@ -17,7 +21,7 @@ self.addEventListener('push', (event) => {
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const url = event.notification.data?.url || '/';
+  const url = event.action === 'marcus' ? '/?tab=marcus' : event.notification.data?.url || '/';
 
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {

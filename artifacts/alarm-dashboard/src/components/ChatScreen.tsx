@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { MapPin, Mic, MicOff, Volume2, VolumeX } from 'lucide-react';
 import {
   sendMessage,
   getHistory,
@@ -10,10 +11,11 @@ import {
   type MarcusState,
 } from '../api';
 import { findWebsiteShortcut, parseOpenWebsiteCommand } from '@/lib/websites';
-import { openExternalUrl } from '@/lib/open-url';
+import { openDialer, openExternalUrl } from '@/lib/open-url';
 import { parseAlarmCommand } from '@/lib/alarm-commands';
+import { buildAssistantContext, getClientLocationContext, isLocationContextEnabled, setLocationContextEnabled } from '@/lib/location';
+import { parseCallCommand, parseNoteCommand, parseReminderCommand, parseTimedWebsiteCommand } from '@/lib/marcus-commands';
 import type { Alarm } from '@/App';
-import { parseNoteCommand, parseReminderCommand, parseTimedWebsiteCommand } from '@/lib/marcus-commands';
 import type { NoteItem } from '@/lib/notes';
 
 interface Props {
@@ -42,6 +44,36 @@ const STATUS_COLOR: Record<string, string> = {
   cancelled: 'bg-gray-100 text-gray-500',
 };
 
+type SpeechRecognitionConstructor = new () => SpeechRecognition;
+
+type SpeechRecognition = EventTarget & {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  start: () => void;
+  stop: () => void;
+  onresult: ((event: SpeechRecognitionEvent) => void) | null;
+  onend: (() => void) | null;
+  onerror: (() => void) | null;
+};
+
+type SpeechRecognitionEvent = {
+  results: ArrayLike<{
+    isFinal: boolean;
+    0: { transcript: string };
+  }>;
+};
+
+function speechRecognitionConstructor() {
+  const speechWindow = window as Window & {
+    SpeechRecognition?: SpeechRecognitionConstructor;
+    webkitSpeechRecognition?: SpeechRecognitionConstructor;
+  };
+  return speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition;
+}
+
+const VOICE_REPLIES_KEY = 'buzzer-marcus-voice-replies';
+
 export default function ChatScreen({ marcus, onMarcusUpdate, onCreateAlarm, onCreateNote, onScheduleReminder, onScheduleWebsiteOpen, onMarcusReply }: Props) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [actions, setActions] = useState<ActionItem[]>([]);
@@ -51,9 +83,14 @@ export default function ChatScreen({ marcus, onMarcusUpdate, onCreateAlarm, onCr
   const [showActions, setShowActions] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastHeartbeatMsg, setLastHeartbeatMsg] = useState<string | null>(null);
+  const [locationEnabled, setLocationEnabled] = useState(() => isLocationContextEnabled());
+  const [locationStatus, setLocationStatus] = useState<string | null>(null);
+  const [listening, setListening] = useState(false);
+  const [voiceReplies, setVoiceReplies] = useState(() => localStorage.getItem(VOICE_REPLIES_KEY) === 'true');
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
 
   const loadData = useCallback(async () => {
     try {
@@ -81,6 +118,38 @@ export default function ChatScreen({ marcus, onMarcusUpdate, onCreateAlarm, onCr
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  const makeContext = () => buildAssistantContext(locationEnabled);
+
+  const speak = (reply: string) => {
+    if (!voiceReplies || !('speechSynthesis' in window)) return;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(reply);
+    utterance.rate = 0.98;
+    utterance.pitch = 1;
+    window.speechSynthesis.speak(utterance);
+  };
+
+  const addLocalExchange = (text: string, reply: string) => {
+    const now = new Date().toISOString();
+    const tempUserMsg: Message = {
+      id: `temp-${Date.now()}`,
+      role: 'user',
+      content: text,
+      sessionDate: now.split('T')[0]!,
+      createdAt: now,
+    };
+    const assistantMsg: Message = {
+      id: `temp-ai-${Date.now()}`,
+      role: 'assistant',
+      content: reply,
+      sessionDate: now.split('T')[0]!,
+      createdAt: new Date().toISOString(),
+    };
+    onMarcusReply?.(reply);
+    speak(reply);
+    setMessages((prev) => [...prev, tempUserMsg, assistantMsg]);
+  };
+
   const handleSend = async () => {
     const text = input.trim();
     if (!text || loading) return;
@@ -88,105 +157,62 @@ export default function ChatScreen({ marcus, onMarcusUpdate, onCreateAlarm, onCr
     setInput('');
     setError(null);
 
+    const call = parseCallCommand(text, marcus?.context);
+    if (call) {
+      const reply = call.phone
+        ? `Opening the dialer for ${call.name}.`
+        : `I don't have a phone number for ${call.name} yet. Tell me "${call.name}'s phone is ..." and I can use it next time.`;
+      addLocalExchange(text, reply);
+      if (call.phone) {
+        openDialer(call.phone);
+      }
+      inputRef.current?.focus();
+      return;
+    }
+
     const timedWebsite = parseTimedWebsiteCommand(text);
     if (timedWebsite && onScheduleWebsiteOpen) {
-      const now = new Date().toISOString();
-      const tempUserMsg: Message = {
-        id: `temp-${Date.now()}`,
-        role: 'user',
-        content: text,
-        sessionDate: now.split('T')[0]!,
-        createdAt: now,
-      };
       const scheduled = timedWebsite.site ? await onScheduleWebsiteOpen(timedWebsite) : false;
-      const assistantMsg: Message = {
-        id: `temp-ai-${Date.now()}`,
-        role: 'assistant',
-        content: timedWebsite.site
+      addLocalExchange(
+        text,
+        timedWebsite.site
           ? scheduled
             ? `Done. I will remind you to open ${timedWebsite.site.title} at ${timedWebsite.timeLabel}.`
             : 'I need native notification permissions before I can schedule that.'
           : `I couldn't find "${timedWebsite.query}" in your website shortcuts.`,
-        sessionDate: now.split('T')[0]!,
-        createdAt: new Date().toISOString(),
-      };
-      onMarcusReply?.(assistantMsg.content);
-      setMessages((prev) => [...prev, tempUserMsg, assistantMsg]);
+      );
       inputRef.current?.focus();
       return;
     }
 
     const reminder = parseReminderCommand(text);
     if (reminder && onScheduleReminder) {
-      const now = new Date().toISOString();
-      const tempUserMsg: Message = {
-        id: `temp-${Date.now()}`,
-        role: 'user',
-        content: text,
-        sessionDate: now.split('T')[0]!,
-        createdAt: now,
-      };
       const scheduled = await onScheduleReminder(reminder);
-      const assistantMsg: Message = {
-        id: `temp-ai-${Date.now()}`,
-        role: 'assistant',
-        content: scheduled ? `Done. I will notify you at ${reminder.timeLabel}: ${reminder.body}.` : 'I need native notification permissions before I can schedule that.',
-        sessionDate: now.split('T')[0]!,
-        createdAt: new Date().toISOString(),
-      };
-      onMarcusReply?.(assistantMsg.content);
-      setMessages((prev) => [...prev, tempUserMsg, assistantMsg]);
+      addLocalExchange(
+        text,
+        scheduled ? `Done. I will notify you at ${reminder.timeLabel}: ${reminder.body}.` : 'I need native notification permissions before I can schedule that.',
+      );
       inputRef.current?.focus();
       return;
     }
 
     const note = parseNoteCommand(text);
     if (note && onCreateNote) {
-      const now = new Date().toISOString();
-      const tempUserMsg: Message = {
-        id: `temp-${Date.now()}`,
-        role: 'user',
-        content: text,
-        sessionDate: now.split('T')[0]!,
-        createdAt: now,
-      };
-      const assistantMsg: Message = {
-        id: `temp-ai-${Date.now()}`,
-        role: 'assistant',
-        content: `Saved note: ${note.content}`,
-        sessionDate: now.split('T')[0]!,
-        createdAt: new Date().toISOString(),
-      };
-      onMarcusReply?.(assistantMsg.content);
       onCreateNote(note);
-      setMessages((prev) => [...prev, tempUserMsg, assistantMsg]);
+      addLocalExchange(text, `Saved note: ${note.content}`);
       inputRef.current?.focus();
       return;
     }
 
     const websiteQuery = parseOpenWebsiteCommand(text);
     if (websiteQuery) {
-      const now = new Date().toISOString();
-      const tempUserMsg: Message = {
-        id: `temp-${Date.now()}`,
-        role: 'user',
-        content: text,
-        sessionDate: now.split('T')[0]!,
-        createdAt: now,
-      };
       const site = findWebsiteShortcut(websiteQuery);
-      const assistantMsg: Message = {
-        id: `temp-ai-${Date.now()}`,
-        role: 'assistant',
-        content: site
+      addLocalExchange(
+        text,
+        site
           ? `Opening ${site.title}.`
           : `I couldn't find "${websiteQuery}" in your website shortcuts. Add it in Websites & Apps first, then ask me to open it.`,
-        sessionDate: now.split('T')[0]!,
-        createdAt: new Date().toISOString(),
-      };
-
-      setMessages((prev) => [...prev, tempUserMsg, assistantMsg]);
-      onMarcusReply?.(assistantMsg.content);
+      );
       if (site) {
         void openExternalUrl(site.url);
       }
@@ -196,25 +222,8 @@ export default function ChatScreen({ marcus, onMarcusUpdate, onCreateAlarm, onCr
 
     const alarm = parseAlarmCommand(text);
     if (alarm && onCreateAlarm) {
-      const now = new Date().toISOString();
-      const tempUserMsg: Message = {
-        id: `temp-${Date.now()}`,
-        role: 'user',
-        content: text,
-        sessionDate: now.split('T')[0]!,
-        createdAt: now,
-      };
-      const assistantMsg: Message = {
-        id: `temp-ai-${Date.now()}`,
-        role: 'assistant',
-        content: `Done. I set "${alarm.label}" for ${alarm.time} ${alarm.meridiem}.`,
-        sessionDate: now.split('T')[0]!,
-        createdAt: new Date().toISOString(),
-      };
-
       onCreateAlarm(alarm);
-      onMarcusReply?.(assistantMsg.content);
-      setMessages((prev) => [...prev, tempUserMsg, assistantMsg]);
+      addLocalExchange(text, `Done. I set "${alarm.label}" for ${alarm.time} ${alarm.meridiem}.`);
       inputRef.current?.focus();
       return;
     }
@@ -232,7 +241,7 @@ export default function ChatScreen({ marcus, onMarcusUpdate, onCreateAlarm, onCr
     setMessages((prev) => [...prev, tempUserMsg]);
 
     try {
-      const { reply } = await sendMessage(text);
+      const { reply } = await sendMessage(text, await makeContext());
       const tempAssistantMsg: Message = {
         id: `temp-ai-${Date.now()}`,
         role: 'assistant',
@@ -242,6 +251,7 @@ export default function ChatScreen({ marcus, onMarcusUpdate, onCreateAlarm, onCr
       };
       setMessages((prev) => [...prev.filter((m) => m.id !== tempUserMsg.id), tempUserMsg, tempAssistantMsg]);
       onMarcusReply?.(reply);
+      speak(reply);
 
       // Refresh actions after a short delay (extraction runs in background)
       setTimeout(() => {
@@ -276,6 +286,74 @@ export default function ChatScreen({ marcus, onMarcusUpdate, onCreateAlarm, onCr
     } finally {
       setHeartbeating(false);
     }
+  };
+
+  const handleToggleLocation = async () => {
+    const next = !locationEnabled;
+    if (!next) {
+      setLocationEnabled(false);
+      setLocationContextEnabled(false);
+      setLocationStatus('Location context off.');
+      return;
+    }
+
+    setLocationStatus('Requesting location...');
+    const location = await getClientLocationContext();
+    if (!location) {
+      setLocationStatus('Location unavailable or blocked.');
+      return;
+    }
+    setLocationEnabled(true);
+    setLocationContextEnabled(true);
+    setLocationStatus(`Location on, accurate to about ${Math.round(location.accuracy ?? 0)}m.`);
+  };
+
+  const handlePushToTalk = () => {
+    const Recognition = speechRecognitionConstructor();
+    if (!Recognition) {
+      setError('Voice input is not supported on this device yet.');
+      return;
+    }
+
+    if (listening) {
+      recognitionRef.current?.stop();
+      setListening(false);
+      return;
+    }
+
+    const recognition = new Recognition();
+    recognitionRef.current = recognition;
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.lang = navigator.language || 'en-US';
+    recognition.onresult = (event) => {
+      const transcript = Array.from(event.results)
+        .map((result) => result[0]?.transcript ?? '')
+        .join(' ')
+        .trim();
+      if (transcript) {
+        setInput((current) => `${current ? `${current} ` : ''}${transcript}`);
+      }
+    };
+    recognition.onend = () => setListening(false);
+    recognition.onerror = () => {
+      setListening(false);
+      setError('I could not hear that. Check microphone permission and try again.');
+    };
+    setError(null);
+    setListening(true);
+    recognition.start();
+  };
+
+  const handleToggleVoiceReplies = () => {
+    setVoiceReplies((current) => {
+      const next = !current;
+      localStorage.setItem(VOICE_REPLIES_KEY, String(next));
+      if (!next && 'speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+      return next;
+    });
   };
 
   const handleMarkDone = async (id: string) => {
@@ -316,6 +394,44 @@ export default function ChatScreen({ marcus, onMarcusUpdate, onCreateAlarm, onCr
 
           <div className="flex flex-wrap items-center gap-2">
             <button
+              onClick={handleToggleLocation}
+              title={locationEnabled ? 'Turn location context off' : 'Allow Marcus to use this device location'}
+              className={`flex min-h-9 items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all ${
+                locationEnabled
+                  ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                  : 'border-gray-200 text-gray-600 hover:bg-gray-50 hover:border-gray-300'
+              }`}
+            >
+              <MapPin size={14} />
+              {locationEnabled ? 'Location on' : 'Location'}
+            </button>
+            <button
+              type="button"
+              onClick={handleToggleVoiceReplies}
+              title={voiceReplies ? 'Turn spoken replies off' : 'Speak Marcus replies aloud'}
+              className={`flex min-h-9 items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all ${
+                voiceReplies
+                  ? 'border-blue-200 bg-blue-50 text-blue-700'
+                  : 'border-gray-200 text-gray-600 hover:bg-gray-50 hover:border-gray-300'
+              }`}
+            >
+              {voiceReplies ? <Volume2 size={14} /> : <VolumeX size={14} />}
+              {voiceReplies ? 'Voice on' : 'Voice'}
+            </button>
+            <button
+              type="button"
+              onClick={handlePushToTalk}
+              title={listening ? 'Stop listening' : 'Push to talk'}
+              className={`flex min-h-9 items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all ${
+                listening
+                  ? 'border-red-200 bg-red-50 text-red-700'
+                  : 'border-gray-200 text-gray-600 hover:bg-gray-50 hover:border-gray-300'
+              }`}
+            >
+              {listening ? <MicOff size={14} /> : <Mic size={14} />}
+              {listening ? 'Listening' : 'Talk'}
+            </button>
+            <button
               onClick={handleHeartbeat}
               disabled={heartbeating}
               title="Run heartbeat — compile all updates and refresh manager state"
@@ -341,6 +457,11 @@ export default function ChatScreen({ marcus, onMarcusUpdate, onCreateAlarm, onCr
         {lastHeartbeatMsg && (
           <div className="px-4 py-2 bg-blue-50 border-b border-blue-100 text-xs text-blue-700">
             💓 {lastHeartbeatMsg}
+          </div>
+        )}
+        {locationStatus && (
+          <div className="px-4 py-2 bg-emerald-50 border-b border-emerald-100 text-xs text-emerald-700">
+            {locationStatus}
           </div>
         )}
 

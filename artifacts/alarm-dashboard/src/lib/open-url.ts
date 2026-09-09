@@ -9,3 +9,7 @@ export async function openExternalUrl(url: string) {
 
   window.open(url, '_blank', 'noopener,noreferrer');
 }
+
+export function openDialer(phone: string) {
+  window.location.href = `tel:${phone}`;
+}
