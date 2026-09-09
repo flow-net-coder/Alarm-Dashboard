@@ -2,8 +2,39 @@ import { Capacitor } from '@capacitor/core';
 import { LocalNotifications, type ActionPerformed, type Channel, type ScheduleOptions } from '@capacitor/local-notifications';
 import type { Alarm } from '@/App';
 
-const ALARM_CHANNEL_ID = 'buzzer_alarm_v2';
-const ALARM_SOUND = 'buzzer_alarm.wav';
+const DEFAULT_ALARM_SOUND_KEY = 'Soft chimes';
+const SOUND_CONFIG: Record<string, { channelId: string; file: string; name: string }> = {
+  'Soft chimes': {
+    channelId: 'buzzer_soft_chimes_v1',
+    file: 'buzzer_soft_chimes.wav',
+    name: 'Soft chimes',
+  },
+  Woodland: {
+    channelId: 'buzzer_woodland_v1',
+    file: 'buzzer_woodland.wav',
+    name: 'Woodland',
+  },
+  'Low tide': {
+    channelId: 'buzzer_low_tide_v1',
+    file: 'buzzer_low_tide.wav',
+    name: 'Low tide',
+  },
+  'Night air': {
+    channelId: 'buzzer_night_air_v1',
+    file: 'buzzer_night_air.wav',
+    name: 'Night air',
+  },
+  'Single Ding': {
+    channelId: 'buzzer_single_ding_v1',
+    file: 'buzzer_single_ding.wav',
+    name: 'Single Ding',
+  },
+  'Multi-Ding (Urgent)': {
+    channelId: 'buzzer_urgent_v1',
+    file: 'buzzer_urgent.wav',
+    name: 'Urgent multi-ding',
+  },
+};
 const ALARM_ACTION_TYPE = 'buzzer_alarm_actions';
 const WEBSITE_ACTION_TYPE = 'buzzer_website_actions';
 const SNOOZE_ACTION_ID = 'snooze';
@@ -54,20 +85,32 @@ function nextOccurrence(day: string, hour: number, minute: number) {
   return target;
 }
 
-async function ensureAlarmChannel() {
+function soundConfig(sound?: string) {
+  return SOUND_CONFIG[sound ?? DEFAULT_ALARM_SOUND_KEY] ?? SOUND_CONFIG[DEFAULT_ALARM_SOUND_KEY];
+}
+
+function alarmChannelIds() {
+  return Object.values(SOUND_CONFIG).map((config) => config.channelId);
+}
+
+async function ensureAlarmChannels() {
   if (!isNativeApp()) return;
 
-  await LocalNotifications.createChannel({
-    id: ALARM_CHANNEL_ID,
-    name: 'Buzzer alarms',
-    description: 'Alarm notifications from Buzzer.',
-    importance: 5,
-    visibility: 1,
-    vibration: true,
-    lights: true,
-    lightColor: '#E69C73',
-    sound: ALARM_SOUND,
-  }).catch(() => undefined);
+  await Promise.all(
+    Object.values(SOUND_CONFIG).map((config) =>
+      LocalNotifications.createChannel({
+        id: config.channelId,
+        name: `Buzzer - ${config.name}`,
+        description: `${config.name} alarm notifications from Buzzer.`,
+        importance: 5,
+        visibility: 1,
+        vibration: true,
+        lights: true,
+        lightColor: '#E69C73',
+        sound: config.file,
+      }).catch(() => undefined),
+    ),
+  );
 }
 
 export type NativeAlarmHealth = {
@@ -91,7 +134,9 @@ export async function getNativeAlarmHealth(): Promise<NativeAlarmHealth | null> 
     displayPermission: permissions.display,
     exactAlarmPermission: exact.exact_alarm,
     pendingCount: pending.notifications.length,
-    alarmChannelReady: channels.channels.some((channel) => channel.id === ALARM_CHANNEL_ID),
+    alarmChannelReady: alarmChannelIds().every((channelId) =>
+      channels.channels.some((channel) => channel.id === channelId),
+    ),
   };
 }
 
@@ -153,7 +198,7 @@ export async function requestNativeAlarmPermissions() {
     // Exact alarm settings are Android-only; iOS/web do not need this path.
   }
 
-  await ensureAlarmChannel();
+  await ensureAlarmChannels();
   return true;
 }
 
@@ -174,6 +219,7 @@ export async function scheduleNativeAlarm(alarm: Alarm) {
   if (!granted) return;
 
   const { hour, minute } = parseAlarmTime(alarm);
+  const selectedSound = soundConfig(alarm.sound);
   const notifications: ScheduleOptions['notifications'] = alarm.days.map((day) => ({
     id: notificationId(alarm, day),
     title: alarm.label || 'Alarm Ding!',
@@ -184,8 +230,8 @@ export async function scheduleNativeAlarm(alarm: Alarm) {
       repeats: true,
       allowWhileIdle: true,
     },
-    channelId: ALARM_CHANNEL_ID,
-    sound: ALARM_SOUND,
+    channelId: selectedSound.channelId,
+    sound: selectedSound.file,
     actionTypeId: ALARM_ACTION_TYPE,
     foreground: true,
     isExactNotification: true,
@@ -207,6 +253,7 @@ export async function sendNativeTestNotification() {
 
   const granted = await requestNativeAlarmPermissions();
   if (!granted) return false;
+  const selectedSound = soundConfig(DEFAULT_ALARM_SOUND_KEY);
 
   await LocalNotifications.schedule({
     notifications: [
@@ -215,8 +262,8 @@ export async function sendNativeTestNotification() {
         title: 'Buzzer notifications are on',
         body: 'Native Android alarms can now ring outside the app.',
         schedule: { at: new Date(Date.now() + 1500), allowWhileIdle: true },
-        channelId: ALARM_CHANNEL_ID,
-        sound: ALARM_SOUND,
+        channelId: selectedSound.channelId,
+        sound: selectedSound.file,
         actionTypeId: ALARM_ACTION_TYPE,
         foreground: true,
         iconColor: '#E69C73',
@@ -233,6 +280,7 @@ export async function scheduleNativeReminder(options: { title: string; body: str
 
   const granted = await requestNativeAlarmPermissions();
   if (!granted) return false;
+  const selectedSound = soundConfig(DEFAULT_ALARM_SOUND_KEY);
 
   await LocalNotifications.schedule({
     notifications: [
@@ -241,8 +289,8 @@ export async function scheduleNativeReminder(options: { title: string; body: str
         title: options.title,
         body: options.body,
         schedule: { at: options.at, allowWhileIdle: true },
-        channelId: ALARM_CHANNEL_ID,
-        sound: ALARM_SOUND,
+        channelId: selectedSound.channelId,
+        sound: selectedSound.file,
         actionTypeId: options.url ? WEBSITE_ACTION_TYPE : ALARM_ACTION_TYPE,
         foreground: true,
         iconColor: '#E69C73',

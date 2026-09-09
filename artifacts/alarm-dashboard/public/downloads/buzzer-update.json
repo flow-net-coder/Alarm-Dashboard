@@ -1,6 +1,6 @@
 {
-  "versionCode": 9,
-  "versionName": "1.8",
+  "versionCode": 10,
+  "versionName": "1.9",
   "apkUrl": "/downloads/buzzer-debug.apk",
-  "notes": "Adds today alarms and notes widgets, a Notes section, Marcus note/reminder commands, and timed website-open notifications."
+  "notes": "Uses the selected alarm sound for native Android notifications with separate sound channels."
 }
