@@ -1,6 +1,6 @@
 {
-  "versionCode": 7,
-  "versionName": "1.6",
+  "versionCode": 8,
+  "versionName": "1.7",
   "apkUrl": "/downloads/buzzer-debug.apk",
-  "notes": "Adds the quick Marcus widget chat screen, bundles the Buzzer alarm sound, and requires exact native alarm scheduling."
+  "notes": "Adds an alarm reliability checklist, Android battery/settings helpers, and snooze/dismiss actions for native alarm notifications."
 }

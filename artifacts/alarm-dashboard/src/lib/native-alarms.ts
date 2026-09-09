@@ -1,9 +1,12 @@
 import { Capacitor } from '@capacitor/core';
-import { LocalNotifications, type ScheduleOptions } from '@capacitor/local-notifications';
+import { LocalNotifications, type ActionPerformed, type Channel, type ScheduleOptions } from '@capacitor/local-notifications';
 import type { Alarm } from '@/App';
 
 const ALARM_CHANNEL_ID = 'buzzer_alarm_v2';
 const ALARM_SOUND = 'buzzer_alarm.wav';
+const ALARM_ACTION_TYPE = 'buzzer_alarm_actions';
+const SNOOZE_ACTION_ID = 'snooze';
+const DISMISS_ACTION_ID = 'dismiss';
 
 const dayToDateDay: Record<string, number> = {
   su: 0,
@@ -65,6 +68,58 @@ async function ensureAlarmChannel() {
   }).catch(() => undefined);
 }
 
+export type NativeAlarmHealth = {
+  displayPermission: 'granted' | 'denied' | 'prompt' | 'prompt-with-rationale';
+  exactAlarmPermission: 'granted' | 'denied' | 'prompt' | 'prompt-with-rationale' | 'unknown';
+  pendingCount: number;
+  alarmChannelReady: boolean;
+};
+
+export async function getNativeAlarmHealth(): Promise<NativeAlarmHealth | null> {
+  if (!isNativeApp()) return null;
+
+  const [permissions, exact, pending, channels] = await Promise.all([
+    LocalNotifications.checkPermissions(),
+    LocalNotifications.checkExactNotificationSetting().catch(() => ({ exact_alarm: 'unknown' as const })),
+    LocalNotifications.getPending().catch(() => ({ notifications: [] })),
+    LocalNotifications.listChannels().catch(() => ({ channels: [] as Channel[] })),
+  ]);
+
+  return {
+    displayPermission: permissions.display,
+    exactAlarmPermission: exact.exact_alarm,
+    pendingCount: pending.notifications.length,
+    alarmChannelReady: channels.channels.some((channel) => channel.id === ALARM_CHANNEL_ID),
+  };
+}
+
+export async function registerNativeAlarmActions() {
+  if (!isNativeApp()) return;
+  await LocalNotifications.registerActionTypes({
+    types: [
+      {
+        id: ALARM_ACTION_TYPE,
+        actions: [
+          { id: SNOOZE_ACTION_ID, title: 'Snooze', foreground: true },
+          { id: DISMISS_ACTION_ID, title: 'Dismiss', foreground: true },
+        ],
+      },
+    ],
+  }).catch(() => undefined);
+}
+
+export async function listenForNativeAlarmActions(onAction: (action: 'snooze' | 'dismiss', alarmId?: string) => void) {
+  if (!isNativeApp()) return undefined;
+  const handle = await LocalNotifications.addListener('localNotificationActionPerformed', (event: ActionPerformed) => {
+    if (event.actionId !== SNOOZE_ACTION_ID && event.actionId !== DISMISS_ACTION_ID) return;
+    const alarmId = typeof event.notification.extra?.alarmId === 'string' ? event.notification.extra.alarmId : undefined;
+    onAction(event.actionId, alarmId);
+  });
+  return () => {
+    void handle.remove();
+  };
+}
+
 export async function requestNativeAlarmPermissions() {
   if (!isNativeApp()) return false;
 
@@ -117,6 +172,7 @@ export async function scheduleNativeAlarm(alarm: Alarm) {
     },
     channelId: ALARM_CHANNEL_ID,
     sound: ALARM_SOUND,
+    actionTypeId: ALARM_ACTION_TYPE,
     foreground: true,
     isExactNotification: true,
     isExactMandatory: true,
@@ -147,6 +203,7 @@ export async function sendNativeTestNotification() {
         schedule: { at: new Date(Date.now() + 1500), allowWhileIdle: true },
         channelId: ALARM_CHANNEL_ID,
         sound: ALARM_SOUND,
+        actionTypeId: ALARM_ACTION_TYPE,
         foreground: true,
         iconColor: '#E69C73',
         extra: { kind: 'native-test' },

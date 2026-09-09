@@ -10,11 +10,15 @@ import { WebsitesView } from '@/components/WebsitesView';
 import { playSound, unlockAudio } from '@/lib/sound';
 import {
   cancelNativeAlarm,
+  getNativeAlarmHealth,
   isNativeApp,
+  listenForNativeAlarmActions,
   requestNativeAlarmPermissions,
+  registerNativeAlarmActions,
   scheduleNativeAlarm,
   sendNativeTestNotification,
   syncNativeAlarms,
+  type NativeAlarmHealth,
 } from '@/lib/native-alarms';
 import {
   getNotificationPermissionState,
@@ -28,6 +32,7 @@ import { findWebsiteShortcut, parseOpenWebsiteCommand } from '@/lib/websites';
 import { openExternalUrl } from '@/lib/open-url';
 import { checkForAppUpdate, installAppUpdate, type AppUpdateInfo } from '@/lib/app-updater';
 import { parseAlarmCommand } from '@/lib/alarm-commands';
+import { getBatteryOptimizationIgnored, openAppNotificationSettings, openBatteryOptimizationSettings } from '@/lib/device-settings';
 import { getHistory, sendMessage, sendTestPush, type Message } from '@/api';
 
 import {
@@ -42,6 +47,7 @@ import {
   Edit3,
   Flame,
   Globe,
+  ListChecks,
   Menu,
   MessageCircle,
   Moon,
@@ -49,6 +55,7 @@ import {
   Search,
   Send,
   Sparkles,
+  Settings,
   SunMedium,
   Trash2,
   Volume2,
@@ -750,6 +757,112 @@ function HomeChatWidget({ onOpenChat, onCreateAlarm }: { onOpenChat: () => void;
   );
 }
 
+function ReliabilityPanel({
+  nativeApp,
+  nativeAlarmStatus,
+  serverPushStatus,
+  permissionStatus,
+  health,
+  batteryIgnored,
+  onEnable,
+  onRefresh,
+  onOpenBatterySettings,
+  onOpenNotificationSettings,
+}: {
+  nativeApp: boolean;
+  nativeAlarmStatus: NativeAlarmStatus;
+  serverPushStatus: ServerPushStatus;
+  permissionStatus: NotificationPermission | 'unsupported';
+  health: NativeAlarmHealth | null;
+  batteryIgnored: boolean | null;
+  onEnable: () => void;
+  onRefresh: () => void;
+  onOpenBatterySettings: () => void;
+  onOpenNotificationSettings: () => void;
+}) {
+  const rows = nativeApp
+    ? [
+        {
+          label: 'Notifications',
+          value: health?.displayPermission === 'granted' ? 'on' : 'needs permission',
+          ok: health?.displayPermission === 'granted',
+        },
+        {
+          label: 'Exact alarms',
+          value: health?.exactAlarmPermission === 'granted' ? 'on' : 'needs permission',
+          ok: health?.exactAlarmPermission === 'granted',
+        },
+        {
+          label: 'Scheduled',
+          value: `${health?.pendingCount ?? 0} native`,
+          ok: (health?.pendingCount ?? 0) > 0,
+        },
+        {
+          label: 'Sound channel',
+          value: health?.alarmChannelReady ? 'Buzzer alarm' : 'not created',
+          ok: health?.alarmChannelReady,
+        },
+        {
+          label: 'Battery',
+          value: batteryIgnored === null ? 'unknown' : batteryIgnored ? 'unrestricted' : 'may be restricted',
+          ok: batteryIgnored === true,
+        },
+      ]
+    : [
+        {
+          label: 'Browser permission',
+          value: permissionStatus === 'granted' ? 'on' : permissionStatus,
+          ok: permissionStatus === 'granted',
+        },
+        {
+          label: 'Closed-tab push',
+          value: serverPushStatus === 'ready' ? 'ready' : serverPushStatus.replace(/_/g, ' '),
+          ok: serverPushStatus === 'ready',
+        },
+      ];
+
+  return (
+    <div className="col-span-2 rounded-[15px] border border-[hsl(var(--border))] bg-[hsl(var(--card)/.74)] px-5 py-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <div className="mono-label text-[hsl(var(--accent))]">Alarm reliability</div>
+          <p className="mt-1 text-sm font-bold">{nativeApp ? 'Android readiness checklist' : 'Browser notification status'}</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={onRefresh} className="quiet-button h-9 px-3 text-xs">
+            <ListChecks size={14} /> Refresh
+          </button>
+          <button type="button" onClick={onEnable} className="quiet-button h-9 px-3 text-xs">
+            <BellRing size={14} /> Enable
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-2 sm:grid-cols-2">
+        {rows.map((row) => (
+          <div key={row.label} className="flex items-center justify-between gap-3 rounded-xl border border-[hsl(var(--border)/.7)] bg-white/70 px-3 py-2">
+            <span className="text-xs font-bold text-[hsl(var(--foreground))]">{row.label}</span>
+            <span className={`rounded-full px-2 py-1 text-[10px] font-extrabold ${row.ok ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+              {row.value}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {nativeApp && (
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button type="button" onClick={onOpenBatterySettings} className="quiet-button min-h-10 px-3 text-xs">
+            <Settings size={14} /> Battery settings
+          </button>
+          <button type="button" onClick={onOpenNotificationSettings} className="quiet-button min-h-10 px-3 text-xs">
+            <Volume2 size={14} /> App settings
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Home() {
   const [alarms, setAlarms] = useState<Alarm[]>(() => {
     try {
@@ -777,6 +890,8 @@ function Home() {
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>('idle');
   const [updateInfo, setUpdateInfo] = useState<AppUpdateInfo | null>(null);
   const [updateMessage, setUpdateMessage] = useState<string | null>(null);
+  const [nativeHealth, setNativeHealth] = useState<NativeAlarmHealth | null>(null);
+  const [batteryOptimizationIgnored, setBatteryOptimizationIgnored] = useState<boolean | null>(null);
   const shouldShowNotificationBanner = nativeApp
     ? nativeAlarmStatus !== 'ready'
     : !notifGranted || ['server_not_configured', 'unsupported', 'sync_error'].includes(serverPushStatus);
@@ -815,6 +930,45 @@ function Home() {
       .then(() => setNativeAlarmStatus((status) => (status === 'sync_error' ? 'ready' : status)))
       .catch(() => setNativeAlarmStatus('sync_error'));
   }, [alarms, nativeApp]);
+
+  const refreshNativeReadiness = () => {
+    if (!nativeApp) return;
+    void getNativeAlarmHealth()
+      .then((health) => {
+        setNativeHealth(health);
+        if (!health) return;
+        setNativeAlarmStatus(health.displayPermission === 'granted' && health.exactAlarmPermission === 'granted' ? 'ready' : 'permission_not_granted');
+      })
+      .catch(() => setNativeAlarmStatus('sync_error'));
+    void getBatteryOptimizationIgnored()
+      .then(setBatteryOptimizationIgnored)
+      .catch(() => setBatteryOptimizationIgnored(null));
+  };
+
+  useEffect(() => {
+    if (!nativeApp) return;
+    refreshNativeReadiness();
+    void registerNativeAlarmActions();
+
+    let cancelled = false;
+    let cleanup: (() => void) | undefined;
+    CapacitorApp.addListener('appStateChange', ({ isActive }) => {
+      if (!cancelled && isActive) {
+        refreshNativeReadiness();
+      }
+    })
+      .then((handle) => {
+        cleanup = () => {
+          void handle.remove();
+        };
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+      cleanup?.();
+    };
+  }, [nativeApp]);
 
   useEffect(() => {
     const applyLaunchTarget = (url: string) => {
@@ -877,6 +1031,7 @@ function Home() {
     const granted = await ensureAlarmPermissions();
     if (nativeApp && granted) {
       await syncNativeAlarms(alarms).catch(() => setNativeAlarmStatus('sync_error'));
+      refreshNativeReadiness();
     }
   };
 
@@ -886,6 +1041,7 @@ function Home() {
       const sent = await sendNativeTestNotification().catch(() => false);
       setNativeAlarmStatus(sent ? 'ready' : 'permission_not_granted');
       setPushTestMessage(sent ? 'Native test notification scheduled.' : 'Android notification or exact alarm permission is not enabled yet.');
+      refreshNativeReadiness();
       return;
     }
 
@@ -933,6 +1089,68 @@ function Home() {
         setUpdateMessage(error.message || 'Could not start the update installer.');
       });
   };
+
+  const handleOpenBatterySettings = () => {
+    void openBatteryOptimizationSettings().finally(() => {
+      window.setTimeout(refreshNativeReadiness, 800);
+    });
+  };
+
+  const handleOpenNotificationSettings = () => {
+    void openAppNotificationSettings().finally(() => {
+      window.setTimeout(refreshNativeReadiness, 800);
+    });
+  };
+
+  const snoozeAlarm = (alarm: Alarm) => {
+    const snoozeMinutes = alarm.snooze || 5;
+    const now = new Date();
+    now.setMinutes(now.getMinutes() + snoozeMinutes);
+    let hour = now.getHours();
+    const meridiem: 'AM' | 'PM' = hour >= 12 ? 'PM' : 'AM';
+    hour = hour % 12 || 12;
+    const minStr = String(now.getMinutes()).padStart(2, '0');
+
+    const snoozedAlarm: Alarm = {
+      ...alarm,
+      id: `snooze-${Date.now()}`,
+      time: `${hour}:${minStr}`,
+      meridiem,
+      enabled: true,
+    };
+
+    setAlarms((prev) => [snoozedAlarm, ...prev]);
+    void scheduleNativeAlarm(snoozedAlarm).catch(() => setNativeAlarmStatus('sync_error'));
+  };
+
+  useEffect(() => {
+    if (!nativeApp) return;
+    let cleanup: (() => void) | undefined;
+    let cancelled = false;
+
+    void listenForNativeAlarmActions((action, alarmId) => {
+      const alarm = alarmId ? alarms.find((item) => item.id === alarmId) : ringingAlarm;
+      if (action === 'dismiss') {
+        setRingingAlarm(null);
+        return;
+      }
+      if (action === 'snooze' && alarm) {
+        snoozeAlarm(alarm);
+        setRingingAlarm(null);
+      }
+    }).then((remove) => {
+      if (cancelled) {
+        remove?.();
+        return;
+      }
+      cleanup = remove;
+    });
+
+    return () => {
+      cancelled = true;
+      cleanup?.();
+    };
+  }, [alarms, nativeApp, ringingAlarm]);
 
   // Real-time Alarm Check Clock Loop (runs every 1 sec)
   useEffect(() => {
@@ -1040,24 +1258,7 @@ function Home() {
 
   const handleSnooze = () => {
     if (ringingAlarm) {
-      // Add snooze minutes
-      const snoozeMinutes = ringingAlarm.snooze || 5;
-      const now = new Date();
-      now.setMinutes(now.getMinutes() + snoozeMinutes);
-      let hour = now.getHours();
-      const meridiem: 'AM' | 'PM' = hour >= 12 ? 'PM' : 'AM';
-      hour = hour % 12 || 12;
-      const minStr = String(now.getMinutes()).padStart(2, '0');
-
-      const snoozedAlarm: Alarm = {
-        ...ringingAlarm,
-        id: `snooze-${Date.now()}`,
-        time: `${hour}:${minStr}`,
-        meridiem,
-        enabled: true,
-      };
-
-      setAlarms((prev) => [snoozedAlarm, ...prev]);
+      snoozeAlarm(ringingAlarm);
       setRingingAlarm(null);
     }
   };
@@ -1340,6 +1541,18 @@ function Home() {
                     {pushTestMessage && <span className="max-w-[180px] text-right text-[10px] font-semibold text-[hsl(var(--muted-foreground))]">{pushTestMessage}</span>}
                   </div>
                 </div>
+                <ReliabilityPanel
+                  nativeApp={nativeApp}
+                  nativeAlarmStatus={nativeAlarmStatus}
+                  serverPushStatus={serverPushStatus}
+                  permissionStatus={permissionStatus}
+                  health={nativeHealth}
+                  batteryIgnored={batteryOptimizationIgnored}
+                  onEnable={handleEnablePermissions}
+                  onRefresh={refreshNativeReadiness}
+                  onOpenBatterySettings={handleOpenBatterySettings}
+                  onOpenNotificationSettings={handleOpenNotificationSettings}
+                />
                 <div className="col-span-2 flex flex-col gap-4 rounded-[15px] border border-[hsl(var(--border))] bg-[hsl(var(--card)/.74)] px-5 py-5 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <div className="mono-label text-[hsl(var(--accent))]">Android app</div>
